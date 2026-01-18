@@ -125,6 +125,7 @@ export const appRouter = router({
         employeePassword: z.string().min(6),
         employeePhone: z.string().optional(),
         schedule: z.record(
+          z.string(),
           z.union([
             z.string(),
             z.object({
