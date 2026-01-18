@@ -412,6 +412,40 @@ export const appRouter = router({
       return await getTimeclocksByEmployee(input.employeeId);
     }),
 
+    getEmployeeSchedule: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number(),
+      })
+    ).query(async ({ input }) => {
+      const employee = await getEmployeeByUsername(input.username);
+      if (!employee || employee.id !== input.employeeId) {
+        throw new Error("Empleado no encontrado");
+      }
+      const hashed = Buffer.from(input.password).toString("base64");
+      if (employee.password !== hashed) {
+        throw new Error("Credenciales inválidas");
+      }
+      const scheduleRows = await getSchedulesByEmployee(employee.id);
+      const dayKeys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+      const scheduleMap: Record<string, { entry1: string; entry2: string; isActive: boolean }> = {};
+      for (const row of scheduleRows) {
+        const key = dayKeys[row.dayOfWeek] ?? "monday";
+        if (!scheduleMap[key]) {
+          scheduleMap[key] = { entry1: "", entry2: "", isActive: row.isWorkDay };
+        }
+        if (!row.isWorkDay) {
+          scheduleMap[key].isActive = false;
+        } else if (row.entrySlot === 2) {
+          scheduleMap[key].entry2 = row.entryTime;
+        } else {
+          scheduleMap[key].entry1 = row.entryTime;
+        }
+      }
+      return scheduleMap;
+    }),
+
     employeeLogin: publicProcedure.input(
       z.object({
         username: z.string().min(1),

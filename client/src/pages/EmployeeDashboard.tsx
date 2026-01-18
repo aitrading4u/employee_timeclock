@@ -42,6 +42,14 @@ export default function EmployeeDashboard() {
     },
     { enabled: Boolean(employeeAuth?.username && employeeAuth?.password && employeeAuth?.employeeId) }
   );
+  const employeeScheduleQuery = trpc.publicApi.getEmployeeSchedule.useQuery(
+    {
+      username: employeeAuth?.username || "",
+      password: employeeAuth?.password || "",
+      employeeId: employeeAuth?.employeeId || 0,
+    },
+    { enabled: Boolean(employeeAuth?.username && employeeAuth?.password && employeeAuth?.employeeId) }
+  );
 
   useEffect(() => {
     if (!employeeAuth) {
@@ -82,7 +90,8 @@ export default function EmployeeDashboard() {
     }
 
     const scheduleKey = weekdayKeys[currentTime.getDay()];
-    const daySchedule = employeeAuth?.schedule?.[scheduleKey];
+    const daySchedule =
+      employeeScheduleQuery.data?.[scheduleKey] ?? employeeAuth?.schedule?.[scheduleKey];
     const entry1 = daySchedule?.entry1 || null;
     const entry2 = daySchedule?.entry2 || null;
     const dayActive = daySchedule?.isActive ?? true;
@@ -103,7 +112,12 @@ export default function EmployeeDashboard() {
     let cutoffHour = LATE_CUTOFF_HOUR;
     let cutoffMinute = LATE_CUTOFF_MINUTE;
 
-    if (entryTime && typeof entryTime === "string" && entryTime.includes(":")) {
+    if (!entryTime) {
+      setIsLate(false);
+      return;
+    }
+
+    if (typeof entryTime === "string" && entryTime.includes(":")) {
       const [hourStr, minuteStr] = entryTime.split(":");
       cutoffHour = Number(hourStr);
       cutoffMinute = Number(minuteStr);
@@ -115,7 +129,13 @@ export default function EmployeeDashboard() {
       hours > cutoffHour || (hours === cutoffHour && minutes >= cutoffMinute);
 
     setIsLate(isAfterCutoff);
-  }, [currentTime, isClockedIn, employeeAuth?.schedule, lastClockOut]);
+  }, [
+    currentTime,
+    isClockedIn,
+    employeeAuth?.schedule,
+    employeeScheduleQuery.data,
+    lastClockOut,
+  ]);
 
   // Get user location
   useEffect(() => {
