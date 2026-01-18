@@ -7,6 +7,7 @@ import { LogOut, MapPin, Users, Calendar, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import RestaurantMap from '@/components/RestaurantMap';
 import { trpc } from '@/lib/trpc';
+import { useAuthContext } from '@/contexts/AuthContext';
 
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
@@ -26,6 +27,10 @@ export default function AdminDashboard() {
   const [employeePhone, setEmployeePhone] = useState('');
   const [workedHours, setWorkedHours] = useState('');
   const [hourlyRate, setHourlyRate] = useState('');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
+  const [incidentEmployeeId, setIncidentEmployeeId] = useState('');
   const [employeeSchedule, setEmployeeSchedule] = useState(() => ({
     monday: { entry1: '', entry2: '', isActive: true },
     tuesday: { entry1: '', entry2: '', isActive: true },
@@ -52,8 +57,9 @@ export default function AdminDashboard() {
     return Math.max(hours, 0) * Math.max(rate, 0);
   })();
 
-  const adminUsername = localStorage.getItem('adminUsername') || '';
-  const adminPassword = localStorage.getItem('adminPassword') || '';
+  const { adminAuth, setAdminAuth } = useAuthContext();
+  const adminUsername = adminAuth?.username || '';
+  const adminPassword = adminAuth?.password || '';
 
   const getRestaurant = trpc.publicApi.getRestaurant.useQuery(
     { username: adminUsername, password: adminPassword },
@@ -61,6 +67,46 @@ export default function AdminDashboard() {
   );
   const upsertRestaurant = trpc.publicApi.upsertRestaurant.useMutation();
   const createEmployee = trpc.publicApi.createEmployee.useMutation();
+  const listEmployees = trpc.publicApi.listEmployees.useQuery(
+    { username: adminUsername, password: adminPassword },
+    { enabled: Boolean(adminUsername && adminPassword) }
+  );
+  const listIncidents = trpc.publicApi.listIncidents.useQuery(
+    { username: adminUsername, password: adminPassword },
+    { enabled: Boolean(adminUsername && adminPassword) }
+  );
+  const timeclocksQuery = trpc.publicApi.getTimeclocksByEmployee.useQuery(
+    {
+      username: adminUsername,
+      password: adminPassword,
+      employeeId: Number(selectedEmployeeId || 0),
+    },
+    { enabled: Boolean(adminUsername && adminPassword && selectedEmployeeId) }
+  );
+
+  const filteredTimeclocks = (timeclocksQuery.data || []).filter((entry) => {
+    if (!rangeStart && !rangeEnd) return true;
+    const entryDate = new Date(entry.entryTime || entry.createdAt);
+    if (rangeStart) {
+      const start = new Date(rangeStart);
+      start.setHours(0, 0, 0, 0);
+      if (entryDate < start) return false;
+    }
+    if (rangeEnd) {
+      const end = new Date(rangeEnd);
+      end.setHours(23, 59, 59, 999);
+      if (entryDate > end) return false;
+    }
+    return true;
+  });
+
+  const totalHours = filteredTimeclocks.reduce((total, entry) => {
+    if (!entry.entryTime || !entry.exitTime) return total;
+    const start = new Date(entry.entryTime).getTime();
+    const end = new Date(entry.exitTime).getTime();
+    if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return total;
+    return total + (end - start) / (1000 * 60 * 60);
+  }, 0);
 
   const handleScheduleChange = (
     day: keyof typeof employeeSchedule,
@@ -87,9 +133,7 @@ export default function AdminDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('adminUsername');
-    localStorage.removeItem('adminPassword');
-    localStorage.removeItem('userRole');
+    setAdminAuth(null);
     setLocation('/');
   };
 
@@ -168,6 +212,12 @@ export default function AdminDashboard() {
       setRadiusMeters(getRestaurant.data.radiusMeters);
     }
   }, [getRestaurant.data]);
+
+  useEffect(() => {
+    if (!adminAuth) {
+      setLocation('/admin-login');
+    }
+  }, [adminAuth, setLocation]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -417,13 +467,19 @@ export default function AdminDashboard() {
               <div className="border-t border-border pt-6">
                 <h3 className="font-semibold text-foreground mb-4">Empleados Registrados</h3>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-                    <div>
-                      <p className="font-medium text-foreground">Juan García</p>
-                      <p className="text-sm text-muted-foreground">Usuario: juan.garcia</p>
-                    </div>
-                    <Button variant="ghost" size="sm">Editar</Button>
-                  </div>
+                  {listEmployees.data?.length ? (
+                    listEmployees.data.map((employee) => (
+                      <div key={employee.id} className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                        <div>
+                          <p className="font-medium text-foreground">{employee.name}</p>
+                          <p className="text-sm text-muted-foreground">Usuario: {employee.username}</p>
+                        </div>
+                        <Button variant="ghost" size="sm">Editar</Button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No hay empleados registrados.</p>
+                  )}
                 </div>
               </div>
             </Card>
@@ -439,28 +495,72 @@ export default function AdminDashboard() {
                   <label className="block text-sm font-medium text-foreground mb-2">
                     Seleccionar Empleado
                   </label>
-                  <select className="input-elegant">
-                    <option>Selecciona un empleado</option>
-                    <option>Juan García</option>
+                  <select
+                    className="input-elegant"
+                    value={selectedEmployeeId}
+                    onChange={(event) => setSelectedEmployeeId(event.target.value)}
+                  >
+                    <option value="">Selecciona un empleado</option>
+                    {listEmployees.data?.map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
-                  <button className="px-4 py-2 bg-accent text-accent-foreground rounded-lg font-medium">
-                    Día
-                  </button>
-                  <button className="px-4 py-2 bg-muted text-foreground rounded-lg font-medium hover:bg-muted/80">
-                    Semana
-                  </button>
-                  <button className="px-4 py-2 bg-muted text-foreground rounded-lg font-medium hover:bg-muted/80">
-                    Mes
-                  </button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Desde
+                    </label>
+                    <input
+                      type="date"
+                      value={rangeStart}
+                      onChange={(event) => setRangeStart(event.target.value)}
+                      className="input-elegant"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Hasta
+                    </label>
+                    <input
+                      type="date"
+                      value={rangeEnd}
+                      onChange={(event) => setRangeEnd(event.target.value)}
+                      className="input-elegant"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* Calendar Display */}
               <div className="p-4 bg-muted rounded-lg text-center">
-                <p className="text-muted-foreground">Calendario de horas</p>
+                <p className="text-muted-foreground">Horas registradas: {totalHours.toFixed(2)}h</p>
+              </div>
+              <div className="mt-4 space-y-2">
+                {filteredTimeclocks.length ? (
+                  filteredTimeclocks.map((entry) => (
+                    <div key={entry.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
+                      <div>
+                        <p className="text-sm text-foreground">
+                          {entry.entryTime
+                            ? new Date(entry.entryTime).toLocaleString("es-ES")
+                            : "Sin entrada"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Salida: {entry.exitTime ? new Date(entry.exitTime).toLocaleString("es-ES") : "Pendiente"}
+                        </p>
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        {entry.isLate ? "Retraso" : "OK"}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">No hay fichajes en este rango.</p>
+                )}
               </div>
               <div className="mt-6 border border-border rounded-lg p-4 space-y-4">
                 <h3 className="text-sm font-semibold text-foreground">
@@ -517,29 +617,53 @@ export default function AdminDashboard() {
                   <label className="block text-sm font-medium text-foreground mb-2">
                     Seleccionar Empleado
                   </label>
-                  <select className="input-elegant">
-                    <option>Selecciona un empleado</option>
-                    <option>Juan García</option>
+                  <select
+                    className="input-elegant"
+                    value={incidentEmployeeId}
+                    onChange={(event) => setIncidentEmployeeId(event.target.value)}
+                  >
+                    <option value="">Todos los empleados</option>
+                    {listEmployees.data?.map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
               {/* Incidents List */}
               <div className="space-y-4">
-                <div className="p-4 border border-border rounded-lg">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <h4 className="font-semibold text-foreground">Retraso en la entrada</h4>
-                      <p className="text-sm text-muted-foreground">Juan García - 2024-01-15</p>
+                {(listIncidents.data || [])
+                  .filter((incident) =>
+                    incidentEmployeeId ? String(incident.employeeId) === incidentEmployeeId : true
+                  )
+                  .length ? (
+                  (listIncidents.data || [])
+                    .filter((incident) =>
+                      incidentEmployeeId ? String(incident.employeeId) === incidentEmployeeId : true
+                    )
+                    .map((incident) => (
+                    <div key={incident.id} className="p-4 border border-border rounded-lg">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h4 className="font-semibold text-foreground">
+                            {incident.type === "late_arrival" ? "Retraso en la entrada" : "Incidencia"}
+                          </h4>
+                          <p className="text-sm text-muted-foreground">
+                            Empleado #{incident.employeeId} - {new Date(incident.createdAt).toLocaleDateString("es-ES")}
+                          </p>
+                        </div>
+                        <span className={incident.status === "pending" ? "badge-warning" : incident.status === "approved" ? "badge-success" : "badge-error"}>
+                          {incident.status === "pending" ? "Pendiente" : incident.status === "approved" ? "Aprobada" : "Rechazada"}
+                        </span>
+                      </div>
+                      <p className="text-sm text-foreground mb-3">{incident.reason}</p>
                     </div>
-                    <span className="badge-warning">Pendiente</span>
-                  </div>
-                  <p className="text-sm text-foreground mb-3">Llegué tarde por tráfico</p>
-                  <div className="flex gap-2">
-                    <Button size="sm" className="btn-primary">Aprobar</Button>
-                    <Button size="sm" variant="outline">Rechazar</Button>
-                  </div>
-                </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">No hay incidencias registradas.</p>
+                )}
               </div>
             </Card>
           </TabsContent>

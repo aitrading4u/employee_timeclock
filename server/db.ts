@@ -177,6 +177,27 @@ export async function getScheduleByEmployeeAndDay(employeeId: number, dayOfWeek:
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getScheduleByEmployeeDayAndSlot(
+  employeeId: number,
+  dayOfWeek: number,
+  entrySlot: number
+) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(schedules)
+    .where(
+      and(
+        eq(schedules.employeeId, employeeId),
+        eq(schedules.dayOfWeek, dayOfWeek),
+        eq(schedules.entrySlot, entrySlot)
+      )
+    )
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
 // Timeclock queries
 export async function getTimeclocksByEmployee(employeeId: number) {
   const db = await getDb();

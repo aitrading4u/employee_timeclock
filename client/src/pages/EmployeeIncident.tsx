@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useAuthContext } from "@/contexts/AuthContext";
 
 export default function EmployeeIncident() {
   const [, setLocation] = useLocation();
@@ -15,6 +16,7 @@ export default function EmployeeIncident() {
   const [submitting, setSubmitting] = useState(false);
   const createIncident = trpc.publicApi.createIncident.useMutation();
   const clockIn = trpc.publicApi.clockIn.useMutation();
+  const { employeeAuth } = useAuthContext();
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -23,12 +25,17 @@ export default function EmployeeIncident() {
       toast.error("Completa la fecha, hora y descripción");
       return;
     }
+    if (!employeeAuth) {
+      toast.error("Inicia sesión para reportar una incidencia");
+      setLocation("/employee-login");
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const username = localStorage.getItem("employeeUsername") || "";
-      const password = localStorage.getItem("employeePassword") || "";
-      const employeeId = Number(localStorage.getItem("employeeId"));
+      const username = employeeAuth?.username || "";
+      const password = employeeAuth?.password || "";
+      const employeeId = employeeAuth?.employeeId || 0;
       await createIncident.mutateAsync({
         username,
         password,
@@ -39,21 +46,20 @@ export default function EmployeeIncident() {
 
       if (incidentType === "delay") {
         const clockInDate = new Date(`${incidentDate}T${incidentTime}`);
-        const locationRaw = localStorage.getItem("employeeLastLocation");
-        const location = locationRaw ? JSON.parse(locationRaw) : null;
-        if (location?.lat && location?.lng) {
+        if (!navigator.geolocation) {
+          toast.error("Geolocalización no disponible en tu navegador");
+        } else {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject);
+          });
           await clockIn.mutateAsync({
             username,
             password,
             employeeId,
-            latitude: location.lat,
-            longitude: location.lng,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
           });
-        } else {
-          toast.error("No se pudo obtener tu ubicación para fichar la entrada");
         }
-        localStorage.setItem("employeeClockedIn", "true");
-        localStorage.setItem("employeeClockInTime", clockInDate.toISOString());
       }
 
       toast.success(

@@ -5,10 +5,8 @@ import { Card } from '@/components/ui/card';
 import { Clock, LogOut, Calendar, Calculator, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
+import { useAuthContext } from '@/contexts/AuthContext';
 
-const CLOCK_IN_STORAGE_KEY = 'employeeClockedIn';
-const CLOCK_IN_TIME_KEY = 'employeeClockInTime';
-const CLOCK_OUT_TIME_KEY = 'employeeClockOutTime';
 const LATE_CUTOFF_HOUR = 9;
 const LATE_CUTOFF_MINUTE = 0;
 
@@ -26,6 +24,7 @@ export default function EmployeeDashboard() {
   const clockInMutation = trpc.publicApi.clockIn.useMutation();
   const clockOutMutation = trpc.publicApi.clockOut.useMutation();
   const [, setLocation] = useLocation();
+  const { employeeAuth, setEmployeeAuth, setLastLocation } = useAuthContext();
   const [location, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isAtRestaurant, setIsAtRestaurant] = useState(false);
   const [isClockedIn, setIsClockedIn] = useState(false);
@@ -33,6 +32,22 @@ export default function EmployeeDashboard() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isLate, setIsLate] = useState(false);
   const [isWorkDay, setIsWorkDay] = useState(true);
+  const [lastClockOut, setLastClockOut] = useState<Date | null>(null);
+
+  const employeeTimeclocks = trpc.publicApi.getEmployeeTimeclocks.useQuery(
+    {
+      username: employeeAuth?.username || "",
+      password: employeeAuth?.password || "",
+      employeeId: employeeAuth?.employeeId || 0,
+    },
+    { enabled: Boolean(employeeAuth?.username && employeeAuth?.password && employeeAuth?.employeeId) }
+  );
+
+  useEffect(() => {
+    if (!employeeAuth) {
+      setLocation('/employee-login');
+    }
+  }, [employeeAuth, setLocation]);
 
   // Update current time
   useEffect(() => {
@@ -41,9 +56,24 @@ export default function EmployeeDashboard() {
   }, []);
 
   useEffect(() => {
-    const storedClockedIn = localStorage.getItem(CLOCK_IN_STORAGE_KEY) === 'true';
-    setIsClockedIn(storedClockedIn);
-  }, []);
+    const timeclocks = employeeTimeclocks.data || [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayRecord = timeclocks.find((entry) => {
+      const entryDate = new Date(entry.createdAt);
+      entryDate.setHours(0, 0, 0, 0);
+      return entryDate.getTime() === today.getTime() && entry.entryTime && !entry.exitTime;
+    });
+    setIsClockedIn(Boolean(todayRecord));
+    const todayExit = timeclocks
+      .filter((entry) => {
+        const entryDate = new Date(entry.createdAt);
+        entryDate.setHours(0, 0, 0, 0);
+        return entryDate.getTime() === today.getTime() && entry.exitTime;
+      })
+      .sort((a, b) => new Date(b.exitTime || 0).getTime() - new Date(a.exitTime || 0).getTime())[0];
+    setLastClockOut(todayExit?.exitTime ? new Date(todayExit.exitTime) : null);
+  }, [employeeTimeclocks.data]);
 
   useEffect(() => {
     if (isClockedIn) {
@@ -52,14 +82,10 @@ export default function EmployeeDashboard() {
     }
 
     const scheduleKey = weekdayKeys[currentTime.getDay()];
-    const scheduleRaw = localStorage.getItem("employeeSchedule");
-    const schedule = scheduleRaw ? JSON.parse(scheduleRaw) : null;
-    const daySchedule = schedule?.[scheduleKey];
+    const daySchedule = employeeAuth?.schedule?.[scheduleKey];
     const entry1 = daySchedule?.entry1 || null;
     const entry2 = daySchedule?.entry2 || null;
     const dayActive = daySchedule?.isActive ?? true;
-    const lastClockOutRaw = localStorage.getItem(CLOCK_OUT_TIME_KEY);
-    const lastClockOut = lastClockOutRaw ? new Date(lastClockOutRaw) : null;
     const isSameDayClockOut =
       lastClockOut &&
       lastClockOut.getFullYear() === currentTime.getFullYear() &&
@@ -89,7 +115,7 @@ export default function EmployeeDashboard() {
       hours > cutoffHour || (hours === cutoffHour && minutes >= cutoffMinute);
 
     setIsLate(isAfterCutoff);
-  }, [currentTime, isClockedIn]);
+  }, [currentTime, isClockedIn, employeeAuth?.schedule, lastClockOut]);
 
   // Get user location
   useEffect(() => {
@@ -100,13 +126,10 @@ export default function EmployeeDashboard() {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           });
-          localStorage.setItem(
-            "employeeLastLocation",
-            JSON.stringify({
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
-            })
-          );
+          setLastLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
           // TODO: Check if within restaurant radius
           setIsAtRestaurant(true);
         },
@@ -126,19 +149,14 @@ export default function EmployeeDashboard() {
 
     setLoading(true);
     try {
-      const username = localStorage.getItem("employeeUsername") || "";
-      const password = localStorage.getItem("employeePassword") || "";
-      const employeeId = Number(localStorage.getItem("employeeId"));
       await clockInMutation.mutateAsync({
-        username,
-        password,
-        employeeId,
+        username: employeeAuth?.username || "",
+        password: employeeAuth?.password || "",
+        employeeId: employeeAuth?.employeeId || 0,
         latitude: location.lat,
         longitude: location.lng,
       });
       setIsClockedIn(true);
-      localStorage.setItem(CLOCK_IN_STORAGE_KEY, 'true');
-      localStorage.setItem(CLOCK_IN_TIME_KEY, new Date().toISOString());
       toast.success('¡Entrada registrada!');
     } catch (error) {
       toast.error('Error al registrar entrada');
@@ -155,20 +173,14 @@ export default function EmployeeDashboard() {
 
     setLoading(true);
     try {
-      const username = localStorage.getItem("employeeUsername") || "";
-      const password = localStorage.getItem("employeePassword") || "";
-      const employeeId = Number(localStorage.getItem("employeeId"));
       await clockOutMutation.mutateAsync({
-        username,
-        password,
-        employeeId,
+        username: employeeAuth?.username || "",
+        password: employeeAuth?.password || "",
+        employeeId: employeeAuth?.employeeId || 0,
         latitude: location.lat,
         longitude: location.lng,
       });
       setIsClockedIn(false);
-      localStorage.setItem(CLOCK_IN_STORAGE_KEY, 'false');
-      localStorage.removeItem(CLOCK_IN_TIME_KEY);
-      localStorage.setItem(CLOCK_OUT_TIME_KEY, new Date().toISOString());
       toast.success('¡Salida registrada!');
     } catch (error) {
       toast.error('Error al registrar salida');
@@ -182,9 +194,7 @@ export default function EmployeeDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('employeeUsername');
-    localStorage.removeItem('employeePassword');
-    localStorage.removeItem('userRole');
+    setEmployeeAuth(null);
     setLocation('/');
   };
 

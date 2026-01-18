@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Clock, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
+import { useAuthContext } from '@/contexts/AuthContext';
 
 export default function EmployeeLogin() {
   const [, setLocation] = useLocation();
@@ -13,6 +14,7 @@ export default function EmployeeLogin() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const employeeLogin = trpc.publicApi.employeeLogin.useMutation();
+  const { setEmployeeAuth, setAdminAuth } = useAuthContext();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,13 +22,13 @@ export default function EmployeeLogin() {
 
     try {
       const result = await employeeLogin.mutateAsync({ username, password });
-      localStorage.setItem('employeeUsername', username);
-      localStorage.setItem('employeePassword', password);
-      localStorage.setItem('employeeId', String(result.employeeId));
-      if (result.schedule) {
-        localStorage.setItem('employeeSchedule', JSON.stringify(result.schedule));
-      }
-      localStorage.setItem('userRole', 'employee');
+      setEmployeeAuth({
+        username,
+        password,
+        employeeId: result.employeeId,
+        schedule: result.schedule,
+      });
+      setAdminAuth(null);
       
       toast.success('¡Bienvenido!');
       setLocation('/employee');
@@ -102,7 +104,7 @@ export default function EmployeeLogin() {
           {/* Info */}
           <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
             <p className="text-sm text-blue-900 dark:text-blue-200">
-              <strong>Demo:</strong> Usa cualquier usuario y contraseña para acceder.
+              Usa tu usuario y contraseña creados por el administrador.
             </p>
           </div>
         </Card>

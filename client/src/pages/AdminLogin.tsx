@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Lock, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
+import { useAuthContext } from '@/contexts/AuthContext';
 
 export default function AdminLogin() {
   const [, setLocation] = useLocation();
@@ -13,6 +14,7 @@ export default function AdminLogin() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const adminLogin = trpc.publicApi.adminLogin.useMutation();
+  const { setAdminAuth, setEmployeeAuth } = useAuthContext();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,9 +22,8 @@ export default function AdminLogin() {
 
     try {
       await adminLogin.mutateAsync({ username, password });
-      localStorage.setItem('adminUsername', username);
-      localStorage.setItem('adminPassword', password);
-      localStorage.setItem('userRole', 'admin');
+      setAdminAuth({ username, password });
+      setEmployeeAuth(null);
       
       toast.success('¡Bienvenido Administrador!');
       setLocation('/admin');

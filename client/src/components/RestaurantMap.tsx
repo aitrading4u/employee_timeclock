@@ -19,8 +19,11 @@ export default function RestaurantMap({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<google.maps.Map | null>(null);
   const marker = useRef<google.maps.Marker | null>(null);
+  const autocomplete = useRef<google.maps.places.Autocomplete | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [locationName, setLocationName] = useState('');
+  const [searchValue, setSearchValue] = useState('');
 
   // Initialize map
   useEffect(() => {
@@ -49,6 +52,31 @@ export default function RestaurantMap({
     // Add initial marker if coordinates exist
     if (latitude && longitude) {
       updateMarker(latitude, longitude);
+    }
+
+    if (searchInputRef.current) {
+      autocomplete.current = new google.maps.places.Autocomplete(searchInputRef.current, {
+        fields: ['geometry', 'formatted_address'],
+      });
+
+      autocomplete.current.addListener('place_changed', () => {
+        const place = autocomplete.current?.getPlace();
+        const location = place?.geometry?.location;
+        if (!location) {
+          toast.error('No se pudo encontrar la ubicación');
+          return;
+        }
+        const lat = location.lat();
+        const lng = location.lng();
+        updateMarker(lat, lng);
+        onLocationSelect(lat, lng);
+        const address = place?.formatted_address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        setLocationName(address);
+        setSearchValue(address);
+        if (onAddressChange) {
+          onAddressChange(address);
+        }
+      });
     }
 
     return () => {
@@ -138,6 +166,19 @@ export default function RestaurantMap({
   return (
     <div className="space-y-4">
       {/* Map Container */}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-foreground">
+          Buscar dirección
+        </label>
+        <input
+          ref={searchInputRef}
+          type="text"
+          value={searchValue}
+          onChange={(event) => setSearchValue(event.target.value)}
+          placeholder="Escribe una dirección o selecciona en el mapa"
+          className="input-elegant"
+        />
+      </div>
       <div
         ref={mapContainer}
         className="w-full h-96 rounded-lg border border-border shadow-md"

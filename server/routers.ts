@@ -8,6 +8,7 @@ import {
   getRestaurantByAdmin, 
   getEmployeesByRestaurant, 
   getScheduleByEmployeeAndDay,
+  getScheduleByEmployeeDayAndSlot,
   getTimeclocksByEmployee,
   getIncidentsByEmployee,
   getEmployeeById,
@@ -216,6 +217,39 @@ export const appRouter = router({
       return await getEmployeesByRestaurant(restaurant.id);
     }),
 
+    getTimeclocksByEmployee: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number(),
+      })
+    ).query(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      return await getTimeclocksByEmployee(input.employeeId);
+    }),
+
+    getEmployeeTimeclocks: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number(),
+      })
+    ).query(async ({ input }) => {
+      const employee = await getEmployeeByUsername(input.username);
+      if (!employee || employee.id !== input.employeeId) {
+        throw new Error("Empleado no encontrado");
+      }
+      const hashed = Buffer.from(input.password).toString("base64");
+      if (employee.password !== hashed) {
+        throw new Error("Credenciales inválidas");
+      }
+      return await getTimeclocksByEmployee(input.employeeId);
+    }),
+
     employeeLogin: publicProcedure.input(
       z.object({
         username: z.string().min(1),
@@ -293,7 +327,10 @@ export const appRouter = router({
       if (todayRecord) throw new Error("Already clocked in today");
       const now = new Date();
       const dayOfWeek = now.getDay();
-      const schedule = await getScheduleByEmployeeAndDay(input.employeeId, dayOfWeek);
+      const hasPreviousShift = todayTimeclocks.some(tc => tc.exitTime);
+      const schedule = hasPreviousShift
+        ? await getScheduleByEmployeeDayAndSlot(input.employeeId, dayOfWeek, 2)
+        : await getScheduleByEmployeeAndDay(input.employeeId, dayOfWeek);
       let isLate = false;
       if (schedule && schedule.isWorkDay && schedule.entryTime !== "00:00") {
         const [scheduleHour, scheduleMinute] = schedule.entryTime.split(":").map(Number);
