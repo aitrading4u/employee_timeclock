@@ -65,8 +65,10 @@ export default function AdminDashboard() {
   };
 
   const buildTime = (hour: string, minute: string) => {
-    if (!hour || !minute) return '';
-    return `${hour}:${minute}`;
+    if (!hour && !minute) return '';
+    const normalizedHour = hour || '00';
+    const normalizedMinute = minute || '00';
+    return `${normalizedHour}:${normalizedMinute}`;
   };
 
   const updateScheduleTime = (

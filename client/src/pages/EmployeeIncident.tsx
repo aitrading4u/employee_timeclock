@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,11 +18,17 @@ export default function EmployeeIncident() {
   const clockIn = trpc.publicApi.clockIn.useMutation();
   const { employeeAuth } = useAuthContext();
 
+  useEffect(() => {
+    const now = new Date();
+    setIncidentDate(now.toISOString().slice(0, 10));
+    setIncidentTime(now.toTimeString().slice(0, 5));
+  }, []);
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!incidentDate || !incidentTime || !description.trim()) {
-      toast.error("Completa la fecha, hora y descripción");
+    if (!description.trim()) {
+      toast.error("Completa la descripción");
       return;
     }
     if (!employeeAuth) {
@@ -36,6 +42,7 @@ export default function EmployeeIncident() {
       const username = employeeAuth?.username || "";
       const password = employeeAuth?.password || "";
       const employeeId = employeeAuth?.employeeId || 0;
+      const now = new Date();
       await createIncident.mutateAsync({
         username,
         password,
@@ -45,7 +52,7 @@ export default function EmployeeIncident() {
       });
 
       if (incidentType === "delay") {
-        const clockInDate = new Date(`${incidentDate}T${incidentTime}`);
+        const clockInDate = now;
         if (!navigator.geolocation) {
           toast.error("Geolocalización no disponible en tu navegador");
         } else {
@@ -125,7 +132,7 @@ export default function EmployeeIncident() {
                 <input
                   type="date"
                   value={incidentDate}
-                  onChange={(event) => setIncidentDate(event.target.value)}
+                  readOnly
                   className="input-elegant"
                 />
               </div>
@@ -136,7 +143,7 @@ export default function EmployeeIncident() {
                 <input
                   type="time"
                   value={incidentTime}
-                  onChange={(event) => setIncidentTime(event.target.value)}
+                  readOnly
                   className="input-elegant"
                 />
               </div>
