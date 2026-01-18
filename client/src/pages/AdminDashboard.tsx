@@ -1,0 +1,418 @@
+import { useState } from 'react';
+import { useLocation } from 'wouter';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { LogOut, MapPin, Users, Calendar, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+import RestaurantMap from '@/components/RestaurantMap';
+
+export default function AdminDashboard() {
+  const [, setLocation] = useLocation();
+  const [activeTab, setActiveTab] = useState('restaurant');
+  
+  // Restaurant form state
+  const [restaurantName, setRestaurantName] = useState('');
+  const [restaurantAddress, setRestaurantAddress] = useState('');
+  const [latitude, setLatitude] = useState(40.7128);
+  const [longitude, setLongitude] = useState(-74.006);
+  const [radiusMeters, setRadiusMeters] = useState(100);
+
+  // Employee form state
+  const [employeeName, setEmployeeName] = useState('');
+  const [employeeUsername, setEmployeeUsername] = useState('');
+  const [employeePassword, setEmployeePassword] = useState('');
+  const [employeePhone, setEmployeePhone] = useState('');
+  const [employeeSchedule, setEmployeeSchedule] = useState(() => ({
+    monday: { entry1: '', entry2: '' },
+    tuesday: { entry1: '', entry2: '' },
+    wednesday: { entry1: '', entry2: '' },
+    thursday: { entry1: '', entry2: '' },
+    friday: { entry1: '', entry2: '' },
+    saturday: { entry1: '', entry2: '' },
+    sunday: { entry1: '', entry2: '' },
+  }));
+  const scheduleDays = [
+    { key: 'monday', label: 'Lunes' },
+    { key: 'tuesday', label: 'Martes' },
+    { key: 'wednesday', label: 'Miércoles' },
+    { key: 'thursday', label: 'Jueves' },
+    { key: 'friday', label: 'Viernes' },
+    { key: 'saturday', label: 'Sábado' },
+    { key: 'sunday', label: 'Domingo' },
+  ] as const;
+
+  const handleScheduleChange = (
+    day: keyof typeof employeeSchedule,
+    field: 'entry1' | 'entry2',
+    value: string
+  ) => {
+    setEmployeeSchedule(prev => ({
+      ...prev,
+      [day]: {
+        ...prev[day],
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('adminUsername');
+    localStorage.removeItem('adminPassword');
+    localStorage.removeItem('userRole');
+    setLocation('/');
+  };
+
+  const handleSaveRestaurant = () => {
+    if (!restaurantName || !restaurantAddress) {
+      toast.error('Por favor completa todos los campos');
+      return;
+    }
+    toast.success('Restaurante guardado correctamente');
+  };
+
+  const handleCreateEmployee = () => {
+    if (!employeeName || !employeeUsername || !employeePassword) {
+      toast.error('Por favor completa todos los campos requeridos');
+      return;
+    }
+    if (employeePassword.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    const stored = localStorage.getItem('employees');
+    const employees = stored ? JSON.parse(stored) : [];
+    employees.push({
+      name: employeeName,
+      username: employeeUsername,
+      password: employeePassword,
+      phone: employeePhone,
+      schedule: employeeSchedule,
+    });
+    localStorage.setItem('employees', JSON.stringify(employees));
+
+    toast.success(`Empleado ${employeeName} creado correctamente`);
+    setEmployeeName('');
+    setEmployeeUsername('');
+    setEmployeePassword('');
+    setEmployeePhone('');
+    setEmployeeSchedule({
+      monday: { entry1: '', entry2: '' },
+      tuesday: { entry1: '', entry2: '' },
+      wednesday: { entry1: '', entry2: '' },
+      thursday: { entry1: '', entry2: '' },
+      friday: { entry1: '', entry2: '' },
+      saturday: { entry1: '', entry2: '' },
+      sunday: { entry1: '', entry2: '' },
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+      {/* Header */}
+      <header className="bg-card border-b border-border shadow-sm sticky top-0 z-50">
+        <div className="container py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="inline-flex items-center justify-center w-10 h-10 bg-accent rounded-lg">
+              <AlertCircle className="w-5 h-5 text-accent-foreground" />
+            </div>
+            <h1 className="text-xl font-bold text-foreground">Panel de Administrador</h1>
+          </div>
+          <Button
+            onClick={handleLogout}
+            variant="ghost"
+            className="flex items-center gap-2"
+          >
+            <LogOut className="w-4 h-4" />
+            Cerrar Sesión
+          </Button>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container py-8">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-4 mb-8">
+            <TabsTrigger value="restaurant" className="flex items-center gap-2">
+              <MapPin className="w-4 h-4" />
+              <span className="hidden sm:inline">Restaurante</span>
+            </TabsTrigger>
+            <TabsTrigger value="employees" className="flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              <span className="hidden sm:inline">Empleados</span>
+            </TabsTrigger>
+            <TabsTrigger value="hours" className="flex items-center gap-2">
+              <Calendar className="w-4 h-4" />
+              <span className="hidden sm:inline">Horas</span>
+            </TabsTrigger>
+            <TabsTrigger value="incidents" className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              <span className="hidden sm:inline">Incidencias</span>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Restaurant Tab */}
+          <TabsContent value="restaurant" className="space-y-6">
+            <Card className="p-6">
+              <h2 className="text-2xl font-bold text-foreground mb-6">Gestión del Restaurante</h2>
+              
+              <div className="space-y-4 mb-8">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Nombre del Restaurante
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Mi Restaurante"
+                    value={restaurantName}
+                    onChange={(e) => setRestaurantName(e.target.value)}
+                    className="input-elegant"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Dirección
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Calle Principal, 123"
+                    value={restaurantAddress}
+                    onChange={(e) => setRestaurantAddress(e.target.value)}
+                    className="input-elegant"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Radio de Validación (metros)
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="100"
+                      value={radiusMeters}
+                      onChange={(e) => setRadiusMeters(Number(e.target.value))}
+                      className="input-elegant"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Map Component */}
+              <div className="mb-8">
+                <h3 className="text-lg font-semibold text-foreground mb-4">Seleccionar Ubicación</h3>
+                <RestaurantMap
+                  latitude={latitude}
+                  longitude={longitude}
+                  onLocationSelect={(lat, lng) => {
+                    setLatitude(lat);
+                    setLongitude(lng);
+                  }}
+                  onAddressChange={(address) => setRestaurantAddress(address)}
+                />
+              </div>
+
+              <Button onClick={handleSaveRestaurant} className="w-full btn-primary">
+                Guardar Restaurante
+              </Button>
+            </Card>
+          </TabsContent>
+
+          {/* Employees Tab */}
+          <TabsContent value="employees" className="space-y-6">
+            <Card className="p-6">
+              <h2 className="text-2xl font-bold text-foreground mb-6">Gestión de Empleados</h2>
+              
+              <div className="space-y-4 mb-8">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Nombre del Empleado
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Juan García"
+                    value={employeeName}
+                    onChange={(e) => setEmployeeName(e.target.value)}
+                    className="input-elegant"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Usuario
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="juan.garcia"
+                    value={employeeUsername}
+                    onChange={(e) => setEmployeeUsername(e.target.value)}
+                    className="input-elegant"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Contraseña
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="••••••••"
+                    value={employeePassword}
+                    onChange={(e) => setEmployeePassword(e.target.value)}
+                    className="input-elegant"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Teléfono (Opcional)
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="+34 600 123 456"
+                    value={employeePhone}
+                    onChange={(e) => setEmployeePhone(e.target.value)}
+                    className="input-elegant"
+                  />
+                </div>
+
+                <div className="border border-border rounded-lg p-4 space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">
+                      Horario de entrada
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Puedes definir hasta dos horas de entrada por día.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    {scheduleDays.map(day => (
+                      <div
+                        key={day.key}
+                        className="grid grid-cols-1 md:grid-cols-[120px,1fr,1fr] gap-2 items-center"
+                      >
+                        <span className="text-sm text-foreground">
+                          {day.label}
+                        </span>
+                        <input
+                          type="time"
+                          value={employeeSchedule[day.key].entry1}
+                          onChange={(e) =>
+                            handleScheduleChange(day.key, 'entry1', e.target.value)
+                          }
+                          className="input-elegant"
+                          placeholder="Entrada 1"
+                        />
+                        <input
+                          type="time"
+                          value={employeeSchedule[day.key].entry2}
+                          onChange={(e) =>
+                            handleScheduleChange(day.key, 'entry2', e.target.value)
+                          }
+                          className="input-elegant"
+                          placeholder="Entrada 2"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <Button onClick={handleCreateEmployee} className="w-full btn-primary">
+                  Crear Empleado
+                </Button>
+              </div>
+
+              {/* Employee List */}
+              <div className="border-t border-border pt-6">
+                <h3 className="font-semibold text-foreground mb-4">Empleados Registrados</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                    <div>
+                      <p className="font-medium text-foreground">Juan García</p>
+                      <p className="text-sm text-muted-foreground">Usuario: juan.garcia</p>
+                    </div>
+                    <Button variant="ghost" size="sm">Editar</Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </TabsContent>
+
+          {/* Hours Tab */}
+          <TabsContent value="hours" className="space-y-6">
+            <Card className="p-6">
+              <h2 className="text-2xl font-bold text-foreground mb-6">Calendario de Horas</h2>
+              
+              <div className="space-y-4 mb-8">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Seleccionar Empleado
+                  </label>
+                  <select className="input-elegant">
+                    <option>Selecciona un empleado</option>
+                    <option>Juan García</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <button className="px-4 py-2 bg-accent text-accent-foreground rounded-lg font-medium">
+                    Día
+                  </button>
+                  <button className="px-4 py-2 bg-muted text-foreground rounded-lg font-medium hover:bg-muted/80">
+                    Semana
+                  </button>
+                  <button className="px-4 py-2 bg-muted text-foreground rounded-lg font-medium hover:bg-muted/80">
+                    Mes
+                  </button>
+                </div>
+              </div>
+
+              {/* Calendar Display */}
+              <div className="p-4 bg-muted rounded-lg text-center">
+                <p className="text-muted-foreground">Calendario de horas</p>
+              </div>
+            </Card>
+          </TabsContent>
+
+          {/* Incidents Tab */}
+          <TabsContent value="incidents" className="space-y-6">
+            <Card className="p-6">
+              <h2 className="text-2xl font-bold text-foreground mb-6">Gestión de Incidencias</h2>
+              
+              <div className="space-y-4 mb-8">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Seleccionar Empleado
+                  </label>
+                  <select className="input-elegant">
+                    <option>Selecciona un empleado</option>
+                    <option>Juan García</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Incidents List */}
+              <div className="space-y-4">
+                <div className="p-4 border border-border rounded-lg">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <h4 className="font-semibold text-foreground">Retraso en la entrada</h4>
+                      <p className="text-sm text-muted-foreground">Juan García - 2024-01-15</p>
+                    </div>
+                    <span className="badge-warning">Pendiente</span>
+                  </div>
+                  <p className="text-sm text-foreground mb-3">Llegué tarde por tráfico</p>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="btn-primary">Aprobar</Button>
+                    <Button size="sm" variant="outline">Rechazar</Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </main>
+    </div>
+  );
+}
