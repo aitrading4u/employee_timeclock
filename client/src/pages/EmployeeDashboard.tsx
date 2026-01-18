@@ -29,6 +29,7 @@ export default function EmployeeDashboard() {
   const [loading, setLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isLate, setIsLate] = useState(false);
+  const [isWorkDay, setIsWorkDay] = useState(true);
 
   // Update current time
   useEffect(() => {
@@ -55,8 +56,10 @@ export default function EmployeeDashboard() {
     );
 
     const scheduleKey = weekdayKeys[currentTime.getDay()];
-    const entry1 = currentEmployee?.schedule?.[scheduleKey]?.entry1 || null;
-    const entry2 = currentEmployee?.schedule?.[scheduleKey]?.entry2 || null;
+    const daySchedule = currentEmployee?.schedule?.[scheduleKey];
+    const entry1 = daySchedule?.entry1 || null;
+    const entry2 = daySchedule?.entry2 || null;
+    const dayActive = daySchedule?.isActive ?? true;
     const lastClockOutRaw = localStorage.getItem(CLOCK_OUT_TIME_KEY);
     const lastClockOut = lastClockOutRaw ? new Date(lastClockOutRaw) : null;
     const isSameDayClockOut =
@@ -64,6 +67,12 @@ export default function EmployeeDashboard() {
       lastClockOut.getFullYear() === currentTime.getFullYear() &&
       lastClockOut.getMonth() === currentTime.getMonth() &&
       lastClockOut.getDate() === currentTime.getDate();
+
+    setIsWorkDay(dayActive);
+    if (!dayActive) {
+      setIsLate(false);
+      return;
+    }
 
     const entryTime = isSameDayClockOut && entry2 ? entry2 : entry1;
 
@@ -203,6 +212,11 @@ export default function EmployeeDashboard() {
               <p className={`text-sm ${isAtRestaurant ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                 {isAtRestaurant ? '✓ Estás en el restaurante' : '✗ No estás en el restaurante'}
               </p>
+              {!isWorkDay && (
+                <p className="text-sm text-yellow-600 dark:text-yellow-400 mt-2">
+                  Día no laborable
+                </p>
+              )}
             </div>
             <div className={`w-4 h-4 rounded-full ${isAtRestaurant ? 'bg-green-500' : 'bg-red-500'}`}></div>
           </div>
@@ -213,7 +227,7 @@ export default function EmployeeDashboard() {
           {/* Entrada Button */}
           <Button
             onClick={handleClockIn}
-            disabled={!isAtRestaurant || isClockedIn || loading || isLate}
+            disabled={!isAtRestaurant || isClockedIn || loading || isLate || !isWorkDay}
             className="btn-primary h-24 text-lg font-semibold flex flex-col items-center justify-center gap-2"
           >
             <Clock className="w-6 h-6" />
@@ -224,7 +238,7 @@ export default function EmployeeDashboard() {
           {/* Salida Button */}
           <Button
             onClick={handleClockOut}
-            disabled={!isAtRestaurant || !isClockedIn || loading}
+            disabled={!isAtRestaurant || !isClockedIn || loading || !isWorkDay}
             className="btn-secondary h-24 text-lg font-semibold flex flex-col items-center justify-center gap-2"
           >
             <Clock className="w-6 h-6" />

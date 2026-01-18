@@ -24,13 +24,13 @@ export default function AdminDashboard() {
   const [employeePassword, setEmployeePassword] = useState('');
   const [employeePhone, setEmployeePhone] = useState('');
   const [employeeSchedule, setEmployeeSchedule] = useState(() => ({
-    monday: { entry1: '', entry2: '' },
-    tuesday: { entry1: '', entry2: '' },
-    wednesday: { entry1: '', entry2: '' },
-    thursday: { entry1: '', entry2: '' },
-    friday: { entry1: '', entry2: '' },
-    saturday: { entry1: '', entry2: '' },
-    sunday: { entry1: '', entry2: '' },
+    monday: { entry1: '', entry2: '', isActive: true },
+    tuesday: { entry1: '', entry2: '', isActive: true },
+    wednesday: { entry1: '', entry2: '', isActive: true },
+    thursday: { entry1: '', entry2: '', isActive: true },
+    friday: { entry1: '', entry2: '', isActive: true },
+    saturday: { entry1: '', entry2: '', isActive: true },
+    sunday: { entry1: '', entry2: '', isActive: true },
   }));
   const scheduleDays = [
     { key: 'monday', label: 'Lunes' },
@@ -52,6 +52,16 @@ export default function AdminDashboard() {
       [day]: {
         ...prev[day],
         [field]: value,
+      },
+    }));
+  };
+
+  const handleScheduleToggle = (day: keyof typeof employeeSchedule) => {
+    setEmployeeSchedule(prev => ({
+      ...prev,
+      [day]: {
+        ...prev[day],
+        isActive: !prev[day].isActive,
       },
     }));
   };
@@ -97,13 +107,13 @@ export default function AdminDashboard() {
     setEmployeePassword('');
     setEmployeePhone('');
     setEmployeeSchedule({
-      monday: { entry1: '', entry2: '' },
-      tuesday: { entry1: '', entry2: '' },
-      wednesday: { entry1: '', entry2: '' },
-      thursday: { entry1: '', entry2: '' },
-      friday: { entry1: '', entry2: '' },
-      saturday: { entry1: '', entry2: '' },
-      sunday: { entry1: '', entry2: '' },
+      monday: { entry1: '', entry2: '', isActive: true },
+      tuesday: { entry1: '', entry2: '', isActive: true },
+      wednesday: { entry1: '', entry2: '', isActive: true },
+      thursday: { entry1: '', entry2: '', isActive: true },
+      friday: { entry1: '', entry2: '', isActive: true },
+      saturday: { entry1: '', entry2: '', isActive: true },
+      sunday: { entry1: '', entry2: '', isActive: true },
     });
   };
 
@@ -290,7 +300,7 @@ export default function AdminDashboard() {
                     {scheduleDays.map(day => (
                       <div
                         key={day.key}
-                        className="grid grid-cols-1 md:grid-cols-[120px,1fr,1fr] gap-2 items-center"
+                        className="grid grid-cols-1 md:grid-cols-[120px,1fr,1fr,auto] gap-2 items-center"
                       >
                         <span className="text-sm text-foreground">
                           {day.label}
@@ -313,6 +323,14 @@ export default function AdminDashboard() {
                           className="input-elegant"
                           placeholder="Entrada 2"
                         />
+                        <label className="flex items-center gap-2 text-sm text-foreground">
+                          <input
+                            type="checkbox"
+                            checked={employeeSchedule[day.key].isActive}
+                            onChange={() => handleScheduleToggle(day.key)}
+                          />
+                          Activo
+                        </label>
                       </div>
                     ))}
                   </div>
