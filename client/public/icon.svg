@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="TimeClock">
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+  <circle cx="256" cy="256" r="156" fill="#f8fafc"/>
+  <circle cx="256" cy="256" r="140" fill="#e2e8f0"/>
+  <circle cx="256" cy="256" r="12" fill="#0f172a"/>
+  <path d="M256 160v104" stroke="#0f172a" stroke-width="20" stroke-linecap="round"/>
+  <path d="M256 256l84 52" stroke="#0f172a" stroke-width="20" stroke-linecap="round"/>
+  <text x="256" y="448" text-anchor="middle" font-size="40" font-family="Inter, Arial, sans-serif" fill="#f8fafc">TC</text>
+</svg>
