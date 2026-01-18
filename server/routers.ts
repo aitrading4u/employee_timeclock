@@ -211,6 +211,101 @@ export const appRouter = router({
       return { success: true };
     }),
 
+    updateEmployee: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number(),
+        employeeName: z.string().min(1),
+        employeeUsername: z.string().min(3),
+        employeePassword: z.string().optional(),
+        employeePhone: z.string().optional(),
+        schedule: z.record(
+          z.string(),
+          z.union([
+            z.string(),
+            z.object({
+              entry1: z.string().optional(),
+              entry2: z.string().optional(),
+              isActive: z.boolean(),
+            }),
+          ])
+        ),
+      })
+    ).mutation(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const employee = await getEmployeeById(input.employeeId);
+      if (!employee) throw new Error("Empleado no encontrado");
+
+      const updateData: Record<string, unknown> = {
+        name: input.employeeName,
+        username: input.employeeUsername,
+        phone: input.employeePhone ?? null,
+      };
+      if (input.employeePassword) {
+        updateData.password = Buffer.from(input.employeePassword).toString("base64");
+      }
+      await db.update(employees).set(updateData).where(eq(employees.id, input.employeeId));
+
+      await db.delete(schedules).where(eq(schedules.employeeId, input.employeeId));
+      const dayMap: Record<string, number> = {
+        sunday: 0,
+        monday: 1,
+        tuesday: 2,
+        wednesday: 3,
+        thursday: 4,
+        friday: 5,
+        saturday: 6,
+      };
+      for (const [dayKey, rawValue] of Object.entries(input.schedule)) {
+        const value =
+          typeof rawValue === "string"
+            ? {
+                entry1: rawValue,
+                entry2: "",
+                isActive: rawValue.trim().length > 0,
+              }
+            : rawValue;
+        const dayOfWeek = dayMap[dayKey];
+        if (dayOfWeek === undefined) continue;
+        if (!value.isActive) {
+          await db.insert(schedules).values({
+            employeeId: input.employeeId,
+            dayOfWeek,
+            entryTime: "00:00",
+            isWorkDay: false,
+            entrySlot: 1,
+          });
+          continue;
+        }
+        if (value.entry1) {
+          await db.insert(schedules).values({
+            employeeId: input.employeeId,
+            dayOfWeek,
+            entryTime: value.entry1,
+            isWorkDay: true,
+            entrySlot: 1,
+          });
+        }
+        if (value.entry2) {
+          await db.insert(schedules).values({
+            employeeId: input.employeeId,
+            dayOfWeek,
+            entryTime: value.entry2,
+            isWorkDay: true,
+            entrySlot: 2,
+          });
+        }
+      }
+      return { success: true };
+    }),
+
     listEmployees: publicProcedure.input(
       z.object({
         username: z.string().min(1),
@@ -227,6 +322,37 @@ export const appRouter = router({
       const restaurant = await getRestaurantByAdmin(admin.id);
       if (!restaurant) return [];
       return await getEmployeesByRestaurant(restaurant.id);
+    }),
+
+    getEmployeeSchedule: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number(),
+      })
+    ).query(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const scheduleRows = await getSchedulesByEmployee(input.employeeId);
+      const dayKeys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+      const scheduleMap: Record<string, { entry1: string; entry2: string; isActive: boolean }> = {};
+      for (const row of scheduleRows) {
+        const key = dayKeys[row.dayOfWeek] ?? "monday";
+        if (!scheduleMap[key]) {
+          scheduleMap[key] = { entry1: "", entry2: "", isActive: row.isWorkDay };
+        }
+        if (!row.isWorkDay) {
+          scheduleMap[key].isActive = false;
+        } else if (row.entrySlot === 2) {
+          scheduleMap[key].entry2 = row.entryTime;
+        } else {
+          scheduleMap[key].entry1 = row.entryTime;
+        }
+      }
+      return scheduleMap;
     }),
 
     getTimeclocksByEmployee: publicProcedure.input(

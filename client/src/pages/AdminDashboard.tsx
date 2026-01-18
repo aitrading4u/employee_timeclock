@@ -25,6 +25,7 @@ export default function AdminDashboard() {
   const [employeeUsername, setEmployeeUsername] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
   const [employeePhone, setEmployeePhone] = useState('');
+  const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
   const [workedHours, setWorkedHours] = useState('');
   const [hourlyRate, setHourlyRate] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -98,6 +99,15 @@ export default function AdminDashboard() {
     { username: adminUsername, password: adminPassword },
     { enabled: Boolean(adminUsername && adminPassword) }
   );
+  const employeeScheduleQuery = trpc.publicApi.getEmployeeSchedule.useQuery(
+    {
+      username: adminUsername,
+      password: adminPassword,
+      employeeId: editingEmployeeId ?? 0,
+    },
+    { enabled: Boolean(adminUsername && adminPassword && editingEmployeeId) }
+  );
+  const updateEmployee = trpc.publicApi.updateEmployee.useMutation();
   const listIncidents = trpc.publicApi.listIncidents.useQuery(
     { username: adminUsername, password: adminPassword },
     { enabled: Boolean(adminUsername && adminPassword) }
@@ -190,30 +200,47 @@ export default function AdminDashboard() {
   };
 
   const handleCreateEmployee = () => {
-    if (!employeeName || !employeeUsername || !employeePassword) {
+    if (!employeeName || !employeeUsername || (!editingEmployeeId && !employeePassword)) {
       toast.error('Por favor completa todos los campos requeridos');
       return;
     }
-    if (employeePassword.length < 6) {
+    if (employeePassword && employeePassword.length < 6) {
       toast.error('La contraseña debe tener al menos 6 caracteres');
       return;
     }
-    createEmployee
-      .mutateAsync({
-        username: adminUsername,
-        password: adminPassword,
-        employeeName,
-        employeeUsername,
-        employeePassword,
-        employeePhone,
-        schedule: employeeSchedule,
-      })
+    const action = editingEmployeeId
+      ? updateEmployee.mutateAsync({
+          username: adminUsername,
+          password: adminPassword,
+          employeeId: editingEmployeeId,
+          employeeName,
+          employeeUsername,
+          employeePassword: employeePassword || undefined,
+          employeePhone,
+          schedule: employeeSchedule,
+        })
+      : createEmployee.mutateAsync({
+          username: adminUsername,
+          password: adminPassword,
+          employeeName,
+          employeeUsername,
+          employeePassword,
+          employeePhone,
+          schedule: employeeSchedule,
+        });
+
+    action
       .then(() => {
-        toast.success(`Empleado ${employeeName} creado correctamente`);
+        toast.success(
+          editingEmployeeId
+            ? `Empleado ${employeeName} actualizado correctamente`
+            : `Empleado ${employeeName} creado correctamente`
+        );
         setEmployeeName('');
         setEmployeeUsername('');
         setEmployeePassword('');
         setEmployeePhone('');
+        setEditingEmployeeId(null);
         setEmployeeSchedule({
           monday: { entry1: '', entry2: '', isActive: true },
           tuesday: { entry1: '', entry2: '', isActive: true },
@@ -223,12 +250,40 @@ export default function AdminDashboard() {
           saturday: { entry1: '', entry2: '', isActive: true },
           sunday: { entry1: '', entry2: '', isActive: true },
         });
+        listEmployees.refetch();
       })
       .catch((error) => {
-        toast.error('Error al crear empleado');
+        toast.error(
+          editingEmployeeId ? 'Error al actualizar empleado' : 'Error al crear empleado'
+        );
         console.error(error);
       });
   };
+
+  const handleEditEmployee = (employeeId: number) => {
+    const employee = listEmployees.data?.find((item) => item.id === employeeId);
+    if (!employee) return;
+    setEditingEmployeeId(employeeId);
+    setEmployeeName(employee.name);
+    setEmployeeUsername(employee.username);
+    setEmployeePassword('');
+    setEmployeePhone(employee.phone || '');
+  };
+
+  useEffect(() => {
+    if (employeeScheduleQuery.data) {
+      setEmployeeSchedule({
+        monday: { entry1: '', entry2: '', isActive: true },
+        tuesday: { entry1: '', entry2: '', isActive: true },
+        wednesday: { entry1: '', entry2: '', isActive: true },
+        thursday: { entry1: '', entry2: '', isActive: true },
+        friday: { entry1: '', entry2: '', isActive: true },
+        saturday: { entry1: '', entry2: '', isActive: true },
+        sunday: { entry1: '', entry2: '', isActive: true },
+        ...employeeScheduleQuery.data,
+      });
+    }
+  }, [employeeScheduleQuery.data]);
 
   useEffect(() => {
     if (getRestaurant.data) {
@@ -540,7 +595,7 @@ export default function AdminDashboard() {
                 </div>
 
                 <Button onClick={handleCreateEmployee} className="w-full btn-primary">
-                  Crear Empleado
+                  {editingEmployeeId ? "Guardar cambios" : "Crear Empleado"}
                 </Button>
               </div>
 
@@ -555,7 +610,13 @@ export default function AdminDashboard() {
                           <p className="font-medium text-foreground">{employee.name}</p>
                           <p className="text-sm text-muted-foreground">Usuario: {employee.username}</p>
                         </div>
-                        <Button variant="ghost" size="sm">Editar</Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditEmployee(employee.id)}
+                        >
+                          Editar
+                        </Button>
                       </div>
                     ))
                   ) : (
