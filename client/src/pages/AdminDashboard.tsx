@@ -50,6 +50,33 @@ export default function AdminDashboard() {
     { key: 'sunday', label: 'Domingo' },
   ] as const;
 
+  const hourOptions = Array.from({ length: 24 }, (_, i) =>
+    String(i).padStart(2, '0')
+  );
+  const minuteOptions = Array.from({ length: 60 }, (_, i) =>
+    String(i).padStart(2, '0')
+  );
+
+  const parseTime = (value: string) => {
+    if (!value) return { hour: '', minute: '' };
+    const [hour, minute] = value.split(':');
+    return { hour: hour || '', minute: minute || '' };
+  };
+
+  const buildTime = (hour: string, minute: string) => {
+    if (!hour || !minute) return '';
+    return `${hour}:${minute}`;
+  };
+
+  const updateScheduleTime = (
+    day: keyof typeof employeeSchedule,
+    field: 'entry1' | 'entry2',
+    hour: string,
+    minute: string
+  ) => {
+    handleScheduleChange(day, field, buildTime(hour, minute));
+  };
+
   const salaryTotal = (() => {
     const hours = Number(workedHours);
     const rate = Number(hourlyRate);
@@ -408,15 +435,42 @@ export default function AdminDashboard() {
                           {day.label}
                         </span>
                         <div className="flex items-center gap-2">
-                          <input
-                            type="time"
-                            value={employeeSchedule[day.key].entry1}
-                            onChange={(e) =>
-                              handleScheduleChange(day.key, 'entry1', e.target.value)
-                            }
-                            className="input-elegant"
-                            placeholder="Entrada 1"
-                          />
+                          {(() => {
+                            const time = parseTime(employeeSchedule[day.key].entry1);
+                            return (
+                              <>
+                                <select
+                                  className="input-elegant"
+                                  value={time.hour}
+                                  onChange={(e) =>
+                                    updateScheduleTime(day.key, 'entry1', e.target.value, time.minute)
+                                  }
+                                >
+                                  <option value="">HH</option>
+                                  {hourOptions.map((hour) => (
+                                    <option key={hour} value={hour}>
+                                      {hour}
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="text-muted-foreground">:</span>
+                                <select
+                                  className="input-elegant"
+                                  value={time.minute}
+                                  onChange={(e) =>
+                                    updateScheduleTime(day.key, 'entry1', time.hour, e.target.value)
+                                  }
+                                >
+                                  <option value="">MM</option>
+                                  {minuteOptions.map((minute) => (
+                                    <option key={minute} value={minute}>
+                                      {minute}
+                                    </option>
+                                  ))}
+                                </select>
+                              </>
+                            );
+                          })()}
                           <Button
                             type="button"
                             size="sm"
@@ -427,15 +481,42 @@ export default function AdminDashboard() {
                           </Button>
                         </div>
                         <div className="flex items-center gap-2">
-                          <input
-                            type="time"
-                            value={employeeSchedule[day.key].entry2}
-                            onChange={(e) =>
-                              handleScheduleChange(day.key, 'entry2', e.target.value)
-                            }
-                            className="input-elegant"
-                            placeholder="Entrada 2"
-                          />
+                          {(() => {
+                            const time = parseTime(employeeSchedule[day.key].entry2);
+                            return (
+                              <>
+                                <select
+                                  className="input-elegant"
+                                  value={time.hour}
+                                  onChange={(e) =>
+                                    updateScheduleTime(day.key, 'entry2', e.target.value, time.minute)
+                                  }
+                                >
+                                  <option value="">HH</option>
+                                  {hourOptions.map((hour) => (
+                                    <option key={hour} value={hour}>
+                                      {hour}
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="text-muted-foreground">:</span>
+                                <select
+                                  className="input-elegant"
+                                  value={time.minute}
+                                  onChange={(e) =>
+                                    updateScheduleTime(day.key, 'entry2', time.hour, e.target.value)
+                                  }
+                                >
+                                  <option value="">MM</option>
+                                  {minuteOptions.map((minute) => (
+                                    <option key={minute} value={minute}>
+                                      {minute}
+                                    </option>
+                                  ))}
+                                </select>
+                              </>
+                            );
+                          })()}
                           <Button
                             type="button"
                             size="sm"
