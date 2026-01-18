@@ -5,22 +5,27 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Clock, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { trpc } from '@/lib/trpc';
 
 export default function EmployeeLogin() {
   const [, setLocation] = useLocation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const employeeLogin = trpc.publicApi.employeeLogin.useMutation();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // TODO: Implement employee login with backend
-      // For now, store credentials in localStorage for demo
+      const result = await employeeLogin.mutateAsync({ username, password });
       localStorage.setItem('employeeUsername', username);
       localStorage.setItem('employeePassword', password);
+      localStorage.setItem('employeeId', String(result.employeeId));
+      if (result.schedule) {
+        localStorage.setItem('employeeSchedule', JSON.stringify(result.schedule));
+      }
       localStorage.setItem('userRole', 'employee');
       
       toast.success('¡Bienvenido!');

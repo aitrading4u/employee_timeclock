@@ -93,6 +93,37 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getOrCreateLocalAdmin(name: string) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get admin: database not available");
+    return undefined;
+  }
+
+  const existing = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, "local-admin"))
+    .limit(1);
+
+  if (existing.length > 0) return existing[0];
+
+  await db.insert(users).values({
+    openId: "local-admin",
+    name,
+    role: "admin",
+    lastSignedIn: new Date(),
+  });
+
+  const created = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, "local-admin"))
+    .limit(1);
+
+  return created.length > 0 ? created[0] : undefined;
+}
+
 // Employee queries
 export async function getEmployeeById(id: number) {
   const db = await getDb();
@@ -105,6 +136,13 @@ export async function getEmployeesByRestaurant(restaurantId: number) {
   const db = await getDb();
   if (!db) return [];
   return await db.select().from(employees).where(eq(employees.restaurantId, restaurantId));
+}
+
+export async function getEmployeeByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(employees).where(eq(employees.username, username)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
 }
 
 // Restaurant queries
@@ -134,6 +172,7 @@ export async function getScheduleByEmployeeAndDay(employeeId: number, dayOfWeek:
   if (!db) return undefined;
   const result = await db.select().from(schedules)
     .where(and(eq(schedules.employeeId, employeeId), eq(schedules.dayOfWeek, dayOfWeek)))
+    .orderBy(schedules.entrySlot)
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }

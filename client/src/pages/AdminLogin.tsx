@@ -5,25 +5,21 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Lock, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { trpc } from '@/lib/trpc';
 
 export default function AdminLogin() {
   const [, setLocation] = useLocation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const adminLogin = trpc.publicApi.adminLogin.useMutation();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      if (username !== "ilbandito" || password !== "Vat1stop") {
-        toast.error("Usuario o contraseña incorrectos");
-        return;
-      }
-
-      // TODO: Implement admin login with backend
-      // For now, store credentials in localStorage for demo
+      await adminLogin.mutateAsync({ username, password });
       localStorage.setItem('adminUsername', username);
       localStorage.setItem('adminPassword', password);
       localStorage.setItem('userRole', 'admin');

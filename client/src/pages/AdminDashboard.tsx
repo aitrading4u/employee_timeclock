@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LogOut, MapPin, Users, Calendar, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import RestaurantMap from '@/components/RestaurantMap';
+import { trpc } from '@/lib/trpc';
 
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
@@ -23,6 +24,8 @@ export default function AdminDashboard() {
   const [employeeUsername, setEmployeeUsername] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
   const [employeePhone, setEmployeePhone] = useState('');
+  const [workedHours, setWorkedHours] = useState('');
+  const [hourlyRate, setHourlyRate] = useState('');
   const [employeeSchedule, setEmployeeSchedule] = useState(() => ({
     monday: { entry1: '', entry2: '', isActive: true },
     tuesday: { entry1: '', entry2: '', isActive: true },
@@ -41,6 +44,23 @@ export default function AdminDashboard() {
     { key: 'saturday', label: 'Sábado' },
     { key: 'sunday', label: 'Domingo' },
   ] as const;
+
+  const salaryTotal = (() => {
+    const hours = Number(workedHours);
+    const rate = Number(hourlyRate);
+    if (Number.isNaN(hours) || Number.isNaN(rate)) return 0;
+    return Math.max(hours, 0) * Math.max(rate, 0);
+  })();
+
+  const adminUsername = localStorage.getItem('adminUsername') || '';
+  const adminPassword = localStorage.getItem('adminPassword') || '';
+
+  const getRestaurant = trpc.publicApi.getRestaurant.useQuery(
+    { username: adminUsername, password: adminPassword },
+    { enabled: Boolean(adminUsername && adminPassword) }
+  );
+  const upsertRestaurant = trpc.publicApi.upsertRestaurant.useMutation();
+  const createEmployee = trpc.publicApi.createEmployee.useMutation();
 
   const handleScheduleChange = (
     day: keyof typeof employeeSchedule,
@@ -78,7 +98,24 @@ export default function AdminDashboard() {
       toast.error('Por favor completa todos los campos');
       return;
     }
-    toast.success('Restaurante guardado correctamente');
+    upsertRestaurant
+      .mutateAsync({
+        username: adminUsername,
+        password: adminPassword,
+        name: restaurantName,
+        address: restaurantAddress,
+        latitude,
+        longitude,
+        radiusMeters,
+      })
+      .then(() => {
+        toast.success('Restaurante guardado correctamente');
+        getRestaurant.refetch();
+      })
+      .catch((error) => {
+        toast.error('Error al guardar restaurante');
+        console.error(error);
+      });
   };
 
   const handleCreateEmployee = () => {
@@ -90,32 +127,47 @@ export default function AdminDashboard() {
       toast.error('La contraseña debe tener al menos 6 caracteres');
       return;
     }
-    const stored = localStorage.getItem('employees');
-    const employees = stored ? JSON.parse(stored) : [];
-    employees.push({
-      name: employeeName,
-      username: employeeUsername,
-      password: employeePassword,
-      phone: employeePhone,
-      schedule: employeeSchedule,
-    });
-    localStorage.setItem('employees', JSON.stringify(employees));
-
-    toast.success(`Empleado ${employeeName} creado correctamente`);
-    setEmployeeName('');
-    setEmployeeUsername('');
-    setEmployeePassword('');
-    setEmployeePhone('');
-    setEmployeeSchedule({
-      monday: { entry1: '', entry2: '', isActive: true },
-      tuesday: { entry1: '', entry2: '', isActive: true },
-      wednesday: { entry1: '', entry2: '', isActive: true },
-      thursday: { entry1: '', entry2: '', isActive: true },
-      friday: { entry1: '', entry2: '', isActive: true },
-      saturday: { entry1: '', entry2: '', isActive: true },
-      sunday: { entry1: '', entry2: '', isActive: true },
-    });
+    createEmployee
+      .mutateAsync({
+        username: adminUsername,
+        password: adminPassword,
+        employeeName,
+        employeeUsername,
+        employeePassword,
+        employeePhone,
+        schedule: employeeSchedule,
+      })
+      .then(() => {
+        toast.success(`Empleado ${employeeName} creado correctamente`);
+        setEmployeeName('');
+        setEmployeeUsername('');
+        setEmployeePassword('');
+        setEmployeePhone('');
+        setEmployeeSchedule({
+          monday: { entry1: '', entry2: '', isActive: true },
+          tuesday: { entry1: '', entry2: '', isActive: true },
+          wednesday: { entry1: '', entry2: '', isActive: true },
+          thursday: { entry1: '', entry2: '', isActive: true },
+          friday: { entry1: '', entry2: '', isActive: true },
+          saturday: { entry1: '', entry2: '', isActive: true },
+          sunday: { entry1: '', entry2: '', isActive: true },
+        });
+      })
+      .catch((error) => {
+        toast.error('Error al crear empleado');
+        console.error(error);
+      });
   };
+
+  useEffect(() => {
+    if (getRestaurant.data) {
+      setRestaurantName(getRestaurant.data.name || '');
+      setRestaurantAddress(getRestaurant.data.address || '');
+      setLatitude(Number(getRestaurant.data.latitude));
+      setLongitude(Number(getRestaurant.data.longitude));
+      setRadiusMeters(getRestaurant.data.radiusMeters);
+    }
+  }, [getRestaurant.data]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -409,6 +461,48 @@ export default function AdminDashboard() {
               {/* Calendar Display */}
               <div className="p-4 bg-muted rounded-lg text-center">
                 <p className="text-muted-foreground">Calendario de horas</p>
+              </div>
+              <div className="mt-6 border border-border rounded-lg p-4 space-y-4">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Calculadora de sueldo
+                </h3>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Horas trabajadas
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.25"
+                    value={workedHours}
+                    onChange={(event) => setWorkedHours(event.target.value)}
+                    className="input-elegant"
+                    placeholder="Ej. 160"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Sueldo por hora
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={hourlyRate}
+                    onChange={(event) => setHourlyRate(event.target.value)}
+                    className="input-elegant"
+                    placeholder="Ej. 12.50"
+                  />
+                </div>
+                <div className="p-3 rounded-lg border border-border bg-muted">
+                  <p className="text-sm text-muted-foreground">Total estimado</p>
+                  <p className="text-lg font-semibold text-foreground">
+                    {salaryTotal.toLocaleString("es-ES", {
+                      style: "currency",
+                      currency: "EUR",
+                    })}
+                  </p>
+                </div>
               </div>
             </Card>
           </TabsContent>

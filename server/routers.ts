@@ -13,7 +13,9 @@ import {
   getEmployeeById,
   getRestaurantById,
   getSchedulesByEmployee,
-  getIncidentById
+  getIncidentById,
+  getEmployeeByUsername,
+  getOrCreateLocalAdmin
 } from "./db";
 import { restaurants, employees, schedules, timeclocks, incidents, users } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
@@ -34,6 +36,357 @@ export const appRouter = router({
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
+    }),
+  }),
+
+  publicApi: router({
+    adminLogin: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+      })
+    ).mutation(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const admin = await getOrCreateLocalAdmin(input.username);
+      if (!admin) throw new Error("Admin not available");
+      return { success: true, adminId: admin.id };
+    }),
+
+    getRestaurant: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+      })
+    ).query(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const admin = await getOrCreateLocalAdmin(input.username);
+      if (!admin) throw new Error("Admin not available");
+      return await getRestaurantByAdmin(admin.id);
+    }),
+
+    upsertRestaurant: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        name: z.string().min(1),
+        address: z.string(),
+        latitude: z.number(),
+        longitude: z.number(),
+        radiusMeters: z.number().default(100),
+      })
+    ).mutation(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const admin = await getOrCreateLocalAdmin(input.username);
+      if (!admin) throw new Error("Admin not available");
+      const existing = await getRestaurantByAdmin(admin.id);
+      if (existing) {
+        await db.update(restaurants).set({
+          name: input.name,
+          address: input.address,
+          latitude: input.latitude.toString(),
+          longitude: input.longitude.toString(),
+          radiusMeters: input.radiusMeters,
+        }).where(eq(restaurants.id, existing.id));
+        return { success: true, restaurantId: existing.id };
+      }
+      await db.insert(restaurants).values({
+        name: input.name,
+        address: input.address,
+        latitude: input.latitude.toString(),
+        longitude: input.longitude.toString(),
+        radiusMeters: input.radiusMeters,
+        adminId: admin.id,
+      });
+      const created = await getRestaurantByAdmin(admin.id);
+      return { success: true, restaurantId: created?.id };
+    }),
+
+    createEmployee: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeName: z.string().min(1),
+        employeeUsername: z.string().min(3),
+        employeePassword: z.string().min(6),
+        employeePhone: z.string().optional(),
+        schedule: z.record(
+          z.object({
+            entry1: z.string().optional(),
+            entry2: z.string().optional(),
+            isActive: z.boolean(),
+          })
+        ),
+      })
+    ).mutation(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const admin = await getOrCreateLocalAdmin(input.username);
+      if (!admin) throw new Error("Admin not available");
+      const restaurant = await getRestaurantByAdmin(admin.id);
+      if (!restaurant) throw new Error("Restaurant not found");
+      const hashedPassword = Buffer.from(input.employeePassword).toString("base64");
+      const result = await db.insert(employees).values({
+        restaurantId: restaurant.id,
+        name: input.employeeName,
+        username: input.employeeUsername,
+        password: hashedPassword,
+        phone: input.employeePhone,
+        isActive: true,
+      });
+      const employee = await getEmployeeByUsername(input.employeeUsername);
+      if (!employee) return { success: true };
+      const dayMap: Record<string, number> = {
+        sunday: 0,
+        monday: 1,
+        tuesday: 2,
+        wednesday: 3,
+        thursday: 4,
+        friday: 5,
+        saturday: 6,
+      };
+      for (const [dayKey, value] of Object.entries(input.schedule)) {
+        const dayOfWeek = dayMap[dayKey];
+        if (dayOfWeek === undefined) continue;
+        if (!value.isActive) {
+          await db.insert(schedules).values({
+            employeeId: employee.id,
+            dayOfWeek,
+            entryTime: "00:00",
+            isWorkDay: false,
+            entrySlot: 1,
+          });
+          continue;
+        }
+        if (value.entry1) {
+          await db.insert(schedules).values({
+            employeeId: employee.id,
+            dayOfWeek,
+            entryTime: value.entry1,
+            isWorkDay: true,
+            entrySlot: 1,
+          });
+        }
+        if (value.entry2) {
+          await db.insert(schedules).values({
+            employeeId: employee.id,
+            dayOfWeek,
+            entryTime: value.entry2,
+            isWorkDay: true,
+            entrySlot: 2,
+          });
+        }
+      }
+      return { success: true };
+    }),
+
+    listEmployees: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+      })
+    ).query(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const admin = await getOrCreateLocalAdmin(input.username);
+      if (!admin) return [];
+      const restaurant = await getRestaurantByAdmin(admin.id);
+      if (!restaurant) return [];
+      return await getEmployeesByRestaurant(restaurant.id);
+    }),
+
+    employeeLogin: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+      })
+    ).mutation(async ({ input }) => {
+      const employee = await getEmployeeByUsername(input.username);
+      if (!employee) throw new Error("Empleado no encontrado");
+      const hashed = Buffer.from(input.password).toString("base64");
+      if (employee.password !== hashed) {
+        throw new Error("Credenciales inválidas");
+      }
+      const scheduleRows = await getSchedulesByEmployee(employee.id);
+      const dayKeys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+      const scheduleMap: Record<string, { entry1: string; entry2: string; isActive: boolean }> = {};
+      for (const row of scheduleRows) {
+        const key = dayKeys[row.dayOfWeek] ?? "monday";
+        if (!scheduleMap[key]) {
+          scheduleMap[key] = { entry1: "", entry2: "", isActive: row.isWorkDay };
+        }
+        if (!row.isWorkDay) {
+          scheduleMap[key].isActive = false;
+        } else if (row.entrySlot === 2) {
+          scheduleMap[key].entry2 = row.entryTime;
+        } else {
+          scheduleMap[key].entry1 = row.entryTime;
+        }
+      }
+      return {
+        success: true,
+        employeeId: employee.id,
+        restaurantId: employee.restaurantId,
+        schedule: scheduleMap,
+      };
+    }),
+
+    clockIn: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number(),
+        latitude: z.number(),
+        longitude: z.number(),
+      })
+    ).mutation(async ({ input }) => {
+      const employee = await getEmployeeByUsername(input.username);
+      if (!employee || employee.id !== input.employeeId) {
+        throw new Error("Empleado no encontrado");
+      }
+      const hashed = Buffer.from(input.password).toString("base64");
+      if (employee.password !== hashed) {
+        throw new Error("Credenciales inválidas");
+      }
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const restaurant = await getRestaurantById(employee.restaurantId);
+      if (!restaurant) throw new Error("Restaurant not found");
+      const distance = calculateDistance(
+        parseFloat(restaurant.latitude.toString()),
+        parseFloat(restaurant.longitude.toString()),
+        input.latitude,
+        input.longitude
+      );
+      if (distance > restaurant.radiusMeters) {
+        throw new Error("You are not at the restaurant location");
+      }
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayTimeclocks = await getTimeclocksByEmployee(input.employeeId);
+      const todayRecord = todayTimeclocks.find(tc => {
+        const tcDate = new Date(tc.createdAt);
+        tcDate.setHours(0, 0, 0, 0);
+        return tcDate.getTime() === today.getTime() && tc.entryTime;
+      });
+      if (todayRecord) throw new Error("Already clocked in today");
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const schedule = await getScheduleByEmployeeAndDay(input.employeeId, dayOfWeek);
+      let isLate = false;
+      if (schedule && schedule.isWorkDay && schedule.entryTime !== "00:00") {
+        const [scheduleHour, scheduleMinute] = schedule.entryTime.split(":").map(Number);
+        const scheduleTime = new Date();
+        scheduleTime.setHours(scheduleHour, scheduleMinute, 0, 0);
+        if (now > scheduleTime) {
+          isLate = true;
+        }
+      }
+      await db.insert(timeclocks).values({
+        employeeId: input.employeeId,
+        entryTime: now,
+        isLate,
+        latitude: input.latitude.toString(),
+        longitude: input.longitude.toString(),
+      });
+      return { success: true, isLate };
+    }),
+
+    clockOut: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number(),
+        latitude: z.number(),
+        longitude: z.number(),
+      })
+    ).mutation(async ({ input }) => {
+      const employee = await getEmployeeByUsername(input.username);
+      if (!employee || employee.id !== input.employeeId) {
+        throw new Error("Empleado no encontrado");
+      }
+      const hashed = Buffer.from(input.password).toString("base64");
+      if (employee.password !== hashed) {
+        throw new Error("Credenciales inválidas");
+      }
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const restaurant = await getRestaurantById(employee.restaurantId);
+      if (!restaurant) throw new Error("Restaurant not found");
+      const distance = calculateDistance(
+        parseFloat(restaurant.latitude.toString()),
+        parseFloat(restaurant.longitude.toString()),
+        input.latitude,
+        input.longitude
+      );
+      if (distance > restaurant.radiusMeters) {
+        throw new Error("You are not at the restaurant location");
+      }
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayTimeclocks = await getTimeclocksByEmployee(input.employeeId);
+      const todayRecord = todayTimeclocks.find(tc => {
+        const tcDate = new Date(tc.createdAt);
+        tcDate.setHours(0, 0, 0, 0);
+        return tcDate.getTime() === today.getTime() && tc.entryTime && !tc.exitTime;
+      });
+      if (!todayRecord) throw new Error("No active timeclock entry found");
+      const now = new Date();
+      await db.update(timeclocks).set({
+        exitTime: now,
+      }).where(eq(timeclocks.id, todayRecord.id));
+      return { success: true };
+    }),
+
+    createIncident: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number(),
+        type: z.enum(["late_arrival", "early_exit", "other"]),
+        reason: z.string().min(1),
+        timeclockId: z.number().optional(),
+      })
+    ).mutation(async ({ input }) => {
+      const employee = await getEmployeeByUsername(input.username);
+      if (!employee || employee.id !== input.employeeId) {
+        throw new Error("Empleado no encontrado");
+      }
+      const hashed = Buffer.from(input.password).toString("base64");
+      if (employee.password !== hashed) {
+        throw new Error("Credenciales inválidas");
+      }
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      await db.insert(incidents).values({
+        employeeId: input.employeeId,
+        timeclockId: input.timeclockId,
+        type: input.type,
+        reason: input.reason,
+        status: "pending",
+      });
+      return { success: true };
     }),
   }),
 

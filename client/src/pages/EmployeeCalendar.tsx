@@ -5,12 +5,22 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { addDays, format } from "date-fns";
+import { useMemo } from "react";
 
 export default function EmployeeCalendar() {
   const [, setLocation] = useLocation();
   const [selectionMode, setSelectionMode] = useState<"single" | "range">("single");
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedRange, setSelectedRange] = useState<{ from?: Date; to?: Date } | undefined>();
+  const [hoursWorked, setHoursWorked] = useState("");
+  const [hourlyRate, setHourlyRate] = useState("");
+
+  const salaryTotal = useMemo(() => {
+    const hours = Number(hoursWorked);
+    const rate = Number(hourlyRate);
+    if (Number.isNaN(hours) || Number.isNaN(rate)) return 0;
+    return Math.max(hours, 0) * Math.max(rate, 0);
+  }, [hoursWorked, hourlyRate]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -132,6 +142,48 @@ export default function EmployeeCalendar() {
                   Horas registradas: 0h
                 </p>
                 <p className="text-sm text-foreground">Incidencias: 0</p>
+              </div>
+              <div className="border border-border rounded-lg p-4 space-y-4">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Calculadora de sueldo
+                </h3>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Horas trabajadas
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.25"
+                    value={hoursWorked}
+                    onChange={(event) => setHoursWorked(event.target.value)}
+                    className="input-elegant"
+                    placeholder="Ej. 160"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Sueldo por hora
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={hourlyRate}
+                    onChange={(event) => setHourlyRate(event.target.value)}
+                    className="input-elegant"
+                    placeholder="Ej. 12.50"
+                  />
+                </div>
+                <div className="p-3 rounded-lg border border-border bg-muted">
+                  <p className="text-sm text-muted-foreground">Total estimado</p>
+                  <p className="text-lg font-semibold text-foreground">
+                    {salaryTotal.toLocaleString("es-ES", {
+                      style: "currency",
+                      currency: "EUR",
+                    })}
+                  </p>
+                </div>
               </div>
               <p className="text-xs text-muted-foreground">
                 Próximamente verás aquí tus fichajes e incidencias por día.

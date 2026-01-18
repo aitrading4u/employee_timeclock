@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
 
 export default function EmployeeIncident() {
   const [, setLocation] = useLocation();
@@ -12,6 +13,8 @@ export default function EmployeeIncident() {
   const [incidentTime, setIncidentTime] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const createIncident = trpc.publicApi.createIncident.useMutation();
+  const clockIn = trpc.publicApi.clockIn.useMutation();
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -23,21 +26,32 @@ export default function EmployeeIncident() {
 
     setSubmitting(true);
     try {
-      const incidentPayload = {
-        type: incidentType,
-        date: incidentDate,
-        time: incidentTime,
-        description: description.trim(),
-        createdAt: new Date().toISOString(),
-      };
-
-      const existing = localStorage.getItem("employeeIncidents");
-      const incidents = existing ? JSON.parse(existing) : [];
-      incidents.push(incidentPayload);
-      localStorage.setItem("employeeIncidents", JSON.stringify(incidents));
+      const username = localStorage.getItem("employeeUsername") || "";
+      const password = localStorage.getItem("employeePassword") || "";
+      const employeeId = Number(localStorage.getItem("employeeId"));
+      await createIncident.mutateAsync({
+        username,
+        password,
+        employeeId,
+        type: incidentType === "delay" ? "late_arrival" : "other",
+        reason: description.trim(),
+      });
 
       if (incidentType === "delay") {
         const clockInDate = new Date(`${incidentDate}T${incidentTime}`);
+        const locationRaw = localStorage.getItem("employeeLastLocation");
+        const location = locationRaw ? JSON.parse(locationRaw) : null;
+        if (location?.lat && location?.lng) {
+          await clockIn.mutateAsync({
+            username,
+            password,
+            employeeId,
+            latitude: location.lat,
+            longitude: location.lng,
+          });
+        } else {
+          toast.error("No se pudo obtener tu ubicación para fichar la entrada");
+        }
         localStorage.setItem("employeeClockedIn", "true");
         localStorage.setItem("employeeClockInTime", clockInDate.toISOString());
       }

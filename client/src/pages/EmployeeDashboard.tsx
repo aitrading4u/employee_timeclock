@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Clock, LogOut, Calendar, Calculator, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { trpc } from '@/lib/trpc';
 
 const CLOCK_IN_STORAGE_KEY = 'employeeClockedIn';
 const CLOCK_IN_TIME_KEY = 'employeeClockInTime';
@@ -22,6 +23,8 @@ const weekdayKeys = [
 ] as const;
 
 export default function EmployeeDashboard() {
+  const clockInMutation = trpc.publicApi.clockIn.useMutation();
+  const clockOutMutation = trpc.publicApi.clockOut.useMutation();
   const [, setLocation] = useLocation();
   const [location, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isAtRestaurant, setIsAtRestaurant] = useState(false);
@@ -48,15 +51,10 @@ export default function EmployeeDashboard() {
       return;
     }
 
-    const storedUsername = localStorage.getItem("employeeUsername");
-    const employeesRaw = localStorage.getItem("employees");
-    const employees = employeesRaw ? JSON.parse(employeesRaw) : [];
-    const currentEmployee = employees.find(
-      (employee: { username?: string }) => employee.username === storedUsername
-    );
-
     const scheduleKey = weekdayKeys[currentTime.getDay()];
-    const daySchedule = currentEmployee?.schedule?.[scheduleKey];
+    const scheduleRaw = localStorage.getItem("employeeSchedule");
+    const schedule = scheduleRaw ? JSON.parse(scheduleRaw) : null;
+    const daySchedule = schedule?.[scheduleKey];
     const entry1 = daySchedule?.entry1 || null;
     const entry2 = daySchedule?.entry2 || null;
     const dayActive = daySchedule?.isActive ?? true;
@@ -102,6 +100,13 @@ export default function EmployeeDashboard() {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           });
+          localStorage.setItem(
+            "employeeLastLocation",
+            JSON.stringify({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            })
+          );
           // TODO: Check if within restaurant radius
           setIsAtRestaurant(true);
         },
@@ -121,7 +126,16 @@ export default function EmployeeDashboard() {
 
     setLoading(true);
     try {
-      // TODO: Call API to clock in
+      const username = localStorage.getItem("employeeUsername") || "";
+      const password = localStorage.getItem("employeePassword") || "";
+      const employeeId = Number(localStorage.getItem("employeeId"));
+      await clockInMutation.mutateAsync({
+        username,
+        password,
+        employeeId,
+        latitude: location.lat,
+        longitude: location.lng,
+      });
       setIsClockedIn(true);
       localStorage.setItem(CLOCK_IN_STORAGE_KEY, 'true');
       localStorage.setItem(CLOCK_IN_TIME_KEY, new Date().toISOString());
@@ -141,7 +155,16 @@ export default function EmployeeDashboard() {
 
     setLoading(true);
     try {
-      // TODO: Call API to clock out
+      const username = localStorage.getItem("employeeUsername") || "";
+      const password = localStorage.getItem("employeePassword") || "";
+      const employeeId = Number(localStorage.getItem("employeeId"));
+      await clockOutMutation.mutateAsync({
+        username,
+        password,
+        employeeId,
+        latitude: location.lat,
+        longitude: location.lng,
+      });
       setIsClockedIn(false);
       localStorage.setItem(CLOCK_IN_STORAGE_KEY, 'false');
       localStorage.removeItem(CLOCK_IN_TIME_KEY);
@@ -270,14 +293,14 @@ export default function EmployeeDashboard() {
             </div>
           </Card>
 
-          <Card className="p-6 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setLocation('/employee/calculator')}>
+        <Card className="p-6 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setLocation('/employee/calendar')}>
             <div className="flex items-center gap-4">
               <div className="inline-flex items-center justify-center w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg">
                 <Calculator className="w-6 h-6 text-green-600 dark:text-green-400" />
               </div>
               <div>
                 <h3 className="font-semibold text-foreground">Calculadora</h3>
-                <p className="text-sm text-muted-foreground">Total de horas</p>
+              <p className="text-sm text-muted-foreground">Sueldo estimado</p>
               </div>
             </div>
           </Card>

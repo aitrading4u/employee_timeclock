@@ -82,6 +82,7 @@ export const schedules = pgTable("schedules", {
   dayOfWeek: integer("dayOfWeek").notNull(), // 0-6 (Sunday-Saturday)
   entryTime: varchar("entryTime", { length: 5 }).notNull(), // HH:mm format
   exitTime: varchar("exitTime", { length: 5 }), // HH:mm format (optional)
+  entrySlot: integer("entrySlot").default(1).notNull(), // 1 or 2 for split shifts
   isWorkDay: boolean("isWorkDay").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
