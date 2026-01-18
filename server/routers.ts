@@ -125,11 +125,14 @@ export const appRouter = router({
         employeePassword: z.string().min(6),
         employeePhone: z.string().optional(),
         schedule: z.record(
-          z.object({
-            entry1: z.string().optional(),
-            entry2: z.string().optional(),
-            isActive: z.boolean(),
-          })
+          z.union([
+            z.string(),
+            z.object({
+              entry1: z.string().optional(),
+              entry2: z.string().optional(),
+              isActive: z.boolean(),
+            }),
+          ])
         ),
       })
     ).mutation(async ({ input }) => {
@@ -164,7 +167,15 @@ export const appRouter = router({
         friday: 5,
         saturday: 6,
       };
-      for (const [dayKey, value] of Object.entries(input.schedule)) {
+      for (const [dayKey, rawValue] of Object.entries(input.schedule)) {
+        const value =
+          typeof rawValue === "string"
+            ? {
+                entry1: rawValue,
+                entry2: "",
+                isActive: rawValue.trim().length > 0,
+              }
+            : rawValue;
         const dayOfWeek = dayMap[dayKey];
         if (dayOfWeek === undefined) continue;
         if (!value.isActive) {
@@ -230,6 +241,30 @@ export const appRouter = router({
         throw new Error("Invalid admin credentials");
       }
       return await getTimeclocksByEmployee(input.employeeId);
+    }),
+
+    listIncidents: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+      })
+    ).query(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const admin = await getOrCreateLocalAdmin(input.username);
+      if (!admin) return [];
+      const restaurant = await getRestaurantByAdmin(admin.id);
+      if (!restaurant) return [];
+      const restaurantEmployees = await getEmployeesByRestaurant(restaurant.id);
+      const employeeIds = restaurantEmployees.map((e) => e.id);
+      if (employeeIds.length === 0) return [];
+      const db = await getDb();
+      if (!db) return [];
+      const allIncidents = await db.select().from(incidents);
+      return allIncidents.filter((incident) => employeeIds.includes(incident.employeeId));
     }),
 
     getEmployeeTimeclocks: publicProcedure.input(
