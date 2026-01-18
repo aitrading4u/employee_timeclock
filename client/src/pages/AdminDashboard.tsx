@@ -305,24 +305,44 @@ export default function AdminDashboard() {
                         <span className="text-sm text-foreground">
                           {day.label}
                         </span>
-                        <input
-                          type="time"
-                          value={employeeSchedule[day.key].entry1}
-                          onChange={(e) =>
-                            handleScheduleChange(day.key, 'entry1', e.target.value)
-                          }
-                          className="input-elegant"
-                          placeholder="Entrada 1"
-                        />
-                        <input
-                          type="time"
-                          value={employeeSchedule[day.key].entry2}
-                          onChange={(e) =>
-                            handleScheduleChange(day.key, 'entry2', e.target.value)
-                          }
-                          className="input-elegant"
-                          placeholder="Entrada 2"
-                        />
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={employeeSchedule[day.key].entry1}
+                            onChange={(e) =>
+                              handleScheduleChange(day.key, 'entry1', e.target.value)
+                            }
+                            className="input-elegant"
+                            placeholder="Entrada 1"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleScheduleChange(day.key, 'entry1', '')}
+                          >
+                            Limpiar
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={employeeSchedule[day.key].entry2}
+                            onChange={(e) =>
+                              handleScheduleChange(day.key, 'entry2', e.target.value)
+                            }
+                            className="input-elegant"
+                            placeholder="Entrada 2"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleScheduleChange(day.key, 'entry2', '')}
+                          >
+                            Limpiar
+                          </Button>
+                        </div>
                         <label className="flex items-center gap-2 text-sm text-foreground">
                           <input
                             type="checkbox"
