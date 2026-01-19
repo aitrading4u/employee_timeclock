@@ -16,6 +16,7 @@ type EmployeeAuth = {
   password: string;
   employeeId: number;
   schedule?: Record<string, EmployeeScheduleDay>;
+  lateGraceMinutes?: number;
 };
 
 type AuthContextValue = {

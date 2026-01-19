@@ -67,6 +67,7 @@ export const employees = pgTable("employees", {
   username: varchar("username", { length: 100 }).notNull().unique(),
   password: varchar("password", { length: 255 }).notNull(), // Hashed password
   phone: varchar("phone", { length: 20 }),
+  lateGraceMinutes: integer("lateGraceMinutes").default(5).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),

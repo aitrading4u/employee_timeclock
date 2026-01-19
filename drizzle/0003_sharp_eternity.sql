@@ -1,0 +1,1 @@
+ALTER TABLE "employees" ADD COLUMN "lateGraceMinutes" integer DEFAULT 5 NOT NULL;

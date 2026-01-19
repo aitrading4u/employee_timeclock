@@ -124,6 +124,7 @@ export const appRouter = router({
         employeeUsername: z.string().min(3),
         employeePassword: z.string().min(6),
         employeePhone: z.string().optional(),
+        lateGraceMinutes: z.number().min(0).max(120).default(5),
         schedule: z.record(
           z.string(),
           z.union([
@@ -155,6 +156,7 @@ export const appRouter = router({
         username: input.employeeUsername,
         password: hashedPassword,
         phone: input.employeePhone,
+        lateGraceMinutes: input.lateGraceMinutes,
         isActive: true,
       });
       const employee = await getEmployeeByUsername(input.employeeUsername);
@@ -220,6 +222,7 @@ export const appRouter = router({
         employeeUsername: z.string().min(3),
         employeePassword: z.string().optional(),
         employeePhone: z.string().optional(),
+        lateGraceMinutes: z.number().min(0).max(120).default(5),
         schedule: z.record(
           z.string(),
           z.union([
@@ -247,6 +250,7 @@ export const appRouter = router({
         name: input.employeeName,
         username: input.employeeUsername,
         phone: input.employeePhone ?? null,
+        lateGraceMinutes: input.lateGraceMinutes,
       };
       if (input.employeePassword) {
         updateData.password = Buffer.from(input.employeePassword).toString("base64");
@@ -501,6 +505,7 @@ export const appRouter = router({
         employeeId: employee.id,
         restaurantId: employee.restaurantId,
         schedule: scheduleMap,
+        lateGraceMinutes: employee.lateGraceMinutes ?? 5,
       };
     }),
 
@@ -550,11 +555,12 @@ export const appRouter = router({
         ? await getScheduleByEmployeeDayAndSlot(input.employeeId, dayOfWeek, 2)
         : await getScheduleByEmployeeAndDay(input.employeeId, dayOfWeek);
       let isLate = false;
+      const graceMinutes = employee.lateGraceMinutes ?? 5;
       if (schedule && schedule.isWorkDay && schedule.entryTime !== "00:00") {
         const [scheduleHour, scheduleMinute] = schedule.entryTime.split(":").map(Number);
         const scheduleTime = new Date();
         scheduleTime.setHours(scheduleHour, scheduleMinute, 0, 0);
-        const graceTime = new Date(scheduleTime.getTime() + 5 * 60 * 1000);
+        const graceTime = new Date(scheduleTime.getTime() + graceMinutes * 60 * 1000);
         if (now > graceTime) {
           isLate = true;
         }
@@ -831,11 +837,12 @@ export const appRouter = router({
       const schedule = await getScheduleByEmployeeAndDay(input.employeeId, dayOfWeek);
       
       let isLate = false;
+      const graceMinutes = employee.lateGraceMinutes ?? 5;
       if (schedule) {
         const [scheduleHour, scheduleMinute] = schedule.entryTime.split(':').map(Number);
         const scheduleTime = new Date();
         scheduleTime.setHours(scheduleHour, scheduleMinute, 0, 0);
-        const graceTime = new Date(scheduleTime.getTime() + 5 * 60 * 1000);
+        const graceTime = new Date(scheduleTime.getTime() + graceMinutes * 60 * 1000);
         
         if (now > graceTime) {
           isLate = true;

@@ -27,6 +27,7 @@ export default function EmployeeLogin() {
         password,
         employeeId: result.employeeId,
         schedule: result.schedule,
+        lateGraceMinutes: result.lateGraceMinutes,
       });
       setAdminAuth(null);
       

@@ -223,7 +223,8 @@ export default function EmployeeDashboard() {
 
     const hours = currentTime.getHours();
     const minutes = currentTime.getMinutes();
-    const cutoffTotalMinutes = cutoffHour * 60 + cutoffMinute + LATE_GRACE_MINUTES;
+    const graceMinutes = employeeAuth?.lateGraceMinutes ?? LATE_GRACE_MINUTES;
+    const cutoffTotalMinutes = cutoffHour * 60 + cutoffMinute + graceMinutes;
     const currentTotalMinutes = hours * 60 + minutes;
     const isAfterCutoff = currentTotalMinutes > cutoffTotalMinutes;
 

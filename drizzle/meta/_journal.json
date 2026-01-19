@@ -8,6 +8,27 @@
       "when": 1768693667784,
       "tag": "0000_flat_tyrannus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1768763108085,
+      "tag": "0001_young_silver_sable",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1768848328155,
+      "tag": "0002_high_master_mold",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1768853808722,
+      "tag": "0003_sharp_eternity",
+      "breakpoints": true
     }
   ]
 }

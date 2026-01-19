@@ -25,6 +25,7 @@ export default function AdminDashboard() {
   const [employeeUsername, setEmployeeUsername] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
   const [employeePhone, setEmployeePhone] = useState('');
+  const [lateGraceMinutes, setLateGraceMinutes] = useState('5');
   const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
   const [workedHours, setWorkedHours] = useState('');
   const [hourlyRate, setHourlyRate] = useState('');
@@ -214,6 +215,10 @@ export default function AdminDashboard() {
       toast.error('La contraseña debe tener al menos 6 caracteres');
       return;
     }
+    const parsedGraceMinutes = Number(lateGraceMinutes);
+    const graceMinutesValue = Number.isFinite(parsedGraceMinutes)
+      ? Math.max(0, parsedGraceMinutes)
+      : 5;
     const action = editingEmployeeId
       ? updateEmployee.mutateAsync({
           username: adminUsername,
@@ -223,6 +228,7 @@ export default function AdminDashboard() {
           employeeUsername,
           employeePassword: employeePassword || undefined,
           employeePhone,
+          lateGraceMinutes: graceMinutesValue,
           schedule: employeeSchedule,
         })
       : createEmployee.mutateAsync({
@@ -232,6 +238,7 @@ export default function AdminDashboard() {
           employeeUsername,
           employeePassword,
           employeePhone,
+          lateGraceMinutes: graceMinutesValue,
           schedule: employeeSchedule,
         });
 
@@ -246,6 +253,7 @@ export default function AdminDashboard() {
         setEmployeeUsername('');
         setEmployeePassword('');
         setEmployeePhone('');
+        setLateGraceMinutes('5');
         setEditingEmployeeId(null);
         setEmployeeSchedule({
           monday: { entry1: '', entry2: '', isActive: true },
@@ -274,6 +282,7 @@ export default function AdminDashboard() {
     setEmployeeUsername(employee.username);
     setEmployeePassword('');
     setEmployeePhone(employee.phone || '');
+    setLateGraceMinutes(String(employee.lateGraceMinutes ?? 5));
   };
 
   useEffect(() => {
@@ -475,6 +484,24 @@ export default function AdminDashboard() {
                     onChange={(e) => setEmployeePhone(e.target.value)}
                     className="input-elegant"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Minutos de gracia (retraso)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="120"
+                    placeholder="5"
+                    value={lateGraceMinutes}
+                    onChange={(e) => setLateGraceMinutes(e.target.value)}
+                    className="input-elegant"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Permite fichar después de la hora sin marcar retraso.
+                  </p>
                 </div>
 
                 <div className="border border-border rounded-lg p-4 space-y-4">
