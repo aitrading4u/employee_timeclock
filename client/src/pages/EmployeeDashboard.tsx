@@ -9,6 +9,7 @@ import { useAuthContext } from '@/contexts/AuthContext';
 
 const LATE_CUTOFF_HOUR = 9;
 const LATE_CUTOFF_MINUTE = 0;
+const LATE_GRACE_MINUTES = 5;
 
 const weekdayKeys = [
   "sunday",
@@ -222,8 +223,9 @@ export default function EmployeeDashboard() {
 
     const hours = currentTime.getHours();
     const minutes = currentTime.getMinutes();
-    const isAfterCutoff =
-      hours > cutoffHour || (hours === cutoffHour && minutes >= cutoffMinute);
+    const cutoffTotalMinutes = cutoffHour * 60 + cutoffMinute + LATE_GRACE_MINUTES;
+    const currentTotalMinutes = hours * 60 + minutes;
+    const isAfterCutoff = currentTotalMinutes > cutoffTotalMinutes;
 
     setIsLate(isAfterCutoff);
   }, [

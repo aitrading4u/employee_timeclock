@@ -554,7 +554,8 @@ export const appRouter = router({
         const [scheduleHour, scheduleMinute] = schedule.entryTime.split(":").map(Number);
         const scheduleTime = new Date();
         scheduleTime.setHours(scheduleHour, scheduleMinute, 0, 0);
-        if (now > scheduleTime) {
+        const graceTime = new Date(scheduleTime.getTime() + 5 * 60 * 1000);
+        if (now > graceTime) {
           isLate = true;
         }
       }
@@ -834,8 +835,9 @@ export const appRouter = router({
         const [scheduleHour, scheduleMinute] = schedule.entryTime.split(':').map(Number);
         const scheduleTime = new Date();
         scheduleTime.setHours(scheduleHour, scheduleMinute, 0, 0);
+        const graceTime = new Date(scheduleTime.getTime() + 5 * 60 * 1000);
         
-        if (now > scheduleTime) {
+        if (now > graceTime) {
           isLate = true;
         }
       }
