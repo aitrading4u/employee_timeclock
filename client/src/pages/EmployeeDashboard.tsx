@@ -50,6 +50,14 @@ export default function EmployeeDashboard() {
     },
     { enabled: Boolean(employeeAuth?.username && employeeAuth?.password && employeeAuth?.employeeId) }
   );
+  const employeeRestaurantQuery = trpc.publicApi.getEmployeeRestaurant.useQuery(
+    {
+      username: employeeAuth?.username || "",
+      password: employeeAuth?.password || "",
+      employeeId: employeeAuth?.employeeId || 0,
+    },
+    { enabled: Boolean(employeeAuth?.username && employeeAuth?.password && employeeAuth?.employeeId) }
+  );
 
   useEffect(() => {
     if (!employeeAuth) {
@@ -150,8 +158,6 @@ export default function EmployeeDashboard() {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           });
-          // TODO: Check if within restaurant radius
-          setIsAtRestaurant(true);
         },
         (error) => {
           toast.error('No se pudo obtener tu ubicación');
@@ -160,6 +166,25 @@ export default function EmployeeDashboard() {
       );
     }
   }, []);
+
+  useEffect(() => {
+    if (!location) {
+      setIsAtRestaurant(false);
+      return;
+    }
+    const restaurant = employeeRestaurantQuery.data;
+    if (!restaurant) {
+      setIsAtRestaurant(false);
+      return;
+    }
+    const distance = calculateDistance(
+      Number(restaurant.latitude),
+      Number(restaurant.longitude),
+      location.lat,
+      location.lng
+    );
+    setIsAtRestaurant(distance <= restaurant.radiusMeters);
+  }, [location, employeeRestaurantQuery.data]);
 
   const handleClockIn = async () => {
     if (!location) {
@@ -345,4 +370,18 @@ export default function EmployeeDashboard() {
       </main>
     </div>
   );
+}
+
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }

@@ -355,6 +355,26 @@ export const appRouter = router({
       return scheduleMap;
     }),
 
+    getEmployeeRestaurant: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number(),
+      })
+    ).query(async ({ input }) => {
+      const employee = await getEmployeeByUsername(input.username);
+      if (!employee || employee.id !== input.employeeId) {
+        throw new Error("Empleado no encontrado");
+      }
+      const hashed = Buffer.from(input.password).toString("base64");
+      if (employee.password !== hashed) {
+        throw new Error("Credenciales inválidas");
+      }
+      const restaurant = await getRestaurantById(employee.restaurantId);
+      if (!restaurant) throw new Error("Restaurant not found");
+      return restaurant;
+    }),
+
     getTimeclocksByEmployee: publicProcedure.input(
       z.object({
         username: z.string().min(1),
