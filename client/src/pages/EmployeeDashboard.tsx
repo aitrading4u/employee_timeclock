@@ -216,12 +216,13 @@ export default function EmployeeDashboard() {
     }
 
     if (typeof entryTime === "string") {
-      if (entryTime.includes(":")) {
-        const [hourStr, minuteStr] = entryTime.split(":");
+      const normalized = entryTime.replace(".", ":").trim();
+      if (normalized.includes(":")) {
+        const [hourStr, minuteStr] = normalized.split(":");
         cutoffHour = Number(hourStr);
-        cutoffMinute = Number(minuteStr);
-      } else if (entryTime.trim().length > 0) {
-        cutoffHour = Number(entryTime);
+        cutoffMinute = Number(minuteStr || "0");
+      } else if (normalized.length > 0) {
+        cutoffHour = Number(normalized);
         cutoffMinute = 0;
       }
     }

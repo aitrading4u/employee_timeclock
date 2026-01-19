@@ -1065,12 +1065,12 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 function parseScheduleTime(entryTime: string): { hour: number; minute: number } | null {
-  const trimmed = entryTime.trim();
+  const trimmed = entryTime.replace(".", ":").trim();
   if (!trimmed) return null;
   if (trimmed.includes(":")) {
     const [hourStr, minuteStr] = trimmed.split(":");
     const hour = Number(hourStr);
-    const minute = Number(minuteStr);
+    const minute = Number(minuteStr || "0");
     if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
     return { hour, minute };
   }
