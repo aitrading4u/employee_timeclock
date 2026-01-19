@@ -215,10 +215,15 @@ export default function EmployeeDashboard() {
       return;
     }
 
-    if (typeof entryTime === "string" && entryTime.includes(":")) {
-      const [hourStr, minuteStr] = entryTime.split(":");
-      cutoffHour = Number(hourStr);
-      cutoffMinute = Number(minuteStr);
+    if (typeof entryTime === "string") {
+      if (entryTime.includes(":")) {
+        const [hourStr, minuteStr] = entryTime.split(":");
+        cutoffHour = Number(hourStr);
+        cutoffMinute = Number(minuteStr);
+      } else if (entryTime.trim().length > 0) {
+        cutoffHour = Number(entryTime);
+        cutoffMinute = 0;
+      }
     }
 
     const hours = currentTime.getHours();

@@ -558,12 +558,14 @@ export const appRouter = router({
       let isLate = false;
       const graceMinutes = employee.lateGraceMinutes ?? 5;
       if (schedule && schedule.isWorkDay && schedule.entryTime !== "00:00") {
-        const [scheduleHour, scheduleMinute] = schedule.entryTime.split(":").map(Number);
-        const scheduleTime = new Date();
-        scheduleTime.setHours(scheduleHour, scheduleMinute, 0, 0);
-        const graceTime = new Date(scheduleTime.getTime() + graceMinutes * 60 * 1000);
-        if (now > graceTime) {
-          isLate = true;
+        const parsed = parseScheduleTime(schedule.entryTime);
+        if (parsed) {
+          const scheduleTime = new Date();
+          scheduleTime.setHours(parsed.hour, parsed.minute, 0, 0);
+          const graceTime = new Date(scheduleTime.getTime() + graceMinutes * 60 * 1000);
+          if (now > graceTime) {
+            isLate = true;
+          }
         }
       }
       await db.insert(timeclocks).values({
@@ -915,13 +917,15 @@ export const appRouter = router({
       let isLate = false;
       const graceMinutes = employee.lateGraceMinutes ?? 5;
       if (schedule) {
-        const [scheduleHour, scheduleMinute] = schedule.entryTime.split(':').map(Number);
-        const scheduleTime = new Date();
-        scheduleTime.setHours(scheduleHour, scheduleMinute, 0, 0);
-        const graceTime = new Date(scheduleTime.getTime() + graceMinutes * 60 * 1000);
-        
-        if (now > graceTime) {
-          isLate = true;
+        const parsed = parseScheduleTime(schedule.entryTime);
+        if (parsed) {
+          const scheduleTime = new Date();
+          scheduleTime.setHours(parsed.hour, parsed.minute, 0, 0);
+          const graceTime = new Date(scheduleTime.getTime() + graceMinutes * 60 * 1000);
+          
+          if (now > graceTime) {
+            isLate = true;
+          }
         }
       }
       
@@ -1058,6 +1062,21 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+function parseScheduleTime(entryTime: string): { hour: number; minute: number } | null {
+  const trimmed = entryTime.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes(":")) {
+    const [hourStr, minuteStr] = trimmed.split(":");
+    const hour = Number(hourStr);
+    const minute = Number(minuteStr);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+    return { hour, minute };
+  }
+  const hour = Number(trimmed);
+  if (Number.isNaN(hour)) return null;
+  return { hour, minute: 0 };
 }
 
 export type AppRouter = typeof appRouter;
