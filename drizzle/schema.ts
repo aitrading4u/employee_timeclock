@@ -8,6 +8,8 @@ import {
   boolean,
   integer,
   numeric,
+  jsonb,
+  date,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -122,6 +124,37 @@ export const incidents = pgTable("incidents", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
 });
+
+/**
+ * Push subscription for employee notifications
+ */
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employeeId").notNull(),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
+});
+
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+export type InsertPushSubscription = typeof pushSubscriptions.$inferInsert;
+
+/**
+ * Notification log to avoid duplicate sends
+ */
+export const notificationLogs = pgTable("notification_logs", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employeeId").notNull(),
+  entryTime: varchar("entryTime", { length: 5 }).notNull(),
+  scheduleDate: date("scheduleDate").notNull(), // Date of the scheduled entry
+  entrySlot: integer("entrySlot").default(1).notNull(), // 1 or 2 for split shifts
+  notifiedAt: timestamp("notifiedAt").defaultNow().notNull(),
+});
+
+export type NotificationLog = typeof notificationLogs.$inferSelect;
+export type InsertNotificationLog = typeof notificationLogs.$inferInsert;
 
 export type Incident = typeof incidents.$inferSelect;
 export type InsertIncident = typeof incidents.$inferInsert;

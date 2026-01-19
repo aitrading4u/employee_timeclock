@@ -38,3 +38,42 @@ self.addEventListener("fetch", event => {
     })
   );
 });
+
+// Push notification event listener
+self.addEventListener("push", event => {
+  const data = event.data?.json() || {};
+  const title = data.title || "TimeClock";
+  const options = {
+    body: data.body || "Tienes una notificación",
+    icon: "/icon.svg",
+    badge: "/icon.svg",
+    tag: data.tag || "timeclock-notification",
+    requireInteraction: false,
+    data: data.data || {},
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  );
+});
+
+// Notification click event listener
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(clientList => {
+      // If a window is already open, focus it
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          return client.focus();
+        }
+      }
+      // Otherwise, open a new window
+      if (clients.openWindow) {
+        const url = event.notification.data?.url || "/";
+        return clients.openWindow(url);
+      }
+    })
+  );
+});

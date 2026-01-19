@@ -1,4 +1,6 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+dotenv.config();
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
@@ -7,6 +9,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { checkAndSendNotifications } from "../notificationService";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -78,6 +81,18 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+  });
+
+  // Start notification scheduler - check every minute
+  setInterval(() => {
+    checkAndSendNotifications().catch((error) => {
+      console.error("Error in notification scheduler:", error);
+    });
+  }, 60000); // Check every minute
+
+  // Also check immediately on startup
+  checkAndSendNotifications().catch((error) => {
+    console.error("Error in initial notification check:", error);
   });
 }
 

@@ -23,6 +23,8 @@ const weekdayKeys = [
 export default function EmployeeDashboard() {
   const clockInMutation = trpc.publicApi.clockIn.useMutation();
   const clockOutMutation = trpc.publicApi.clockOut.useMutation();
+  const subscribePushMutation = trpc.publicApi.pushNotifications.subscribe.useMutation();
+  const vapidKeyQuery = trpc.publicApi.pushNotifications.getVapidPublicKey.useQuery();
   const [, setLocation] = useLocation();
   const { employeeAuth, setEmployeeAuth, setLastLocation } = useAuthContext();
   const [location, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -64,6 +66,93 @@ export default function EmployeeDashboard() {
       setLocation('/employee-login');
     }
   }, [employeeAuth, setLocation]);
+
+  // Request push notification permission and subscribe
+  useEffect(() => {
+    if (!employeeAuth || !vapidKeyQuery.data?.publicKey) return;
+
+    const subscribeToPushNotifications = async () => {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.log('Push notifications are not supported');
+        return;
+      }
+
+      try {
+        // Check if already subscribed
+        const registration = await navigator.serviceWorker.ready;
+        const existingSubscription = await registration.pushManager.getSubscription();
+        
+        if (existingSubscription) {
+          // Already subscribed, update if needed
+          return;
+        }
+
+        // Request permission
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          console.log('Notification permission denied');
+          return;
+        }
+
+        // Convert VAPID key from base64url to Uint8Array
+        const vapidPublicKey = vapidKeyQuery.data.publicKey;
+        const urlBase64ToUint8Array = (base64String: string) => {
+          const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+          const base64 = (base64String + padding)
+            .replace(/-/g, '+')
+            .replace(/_/g, '/');
+          const rawData = window.atob(base64);
+          const outputArray = new Uint8Array(rawData.length);
+          for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+          }
+          return outputArray;
+        };
+
+        // Subscribe to push notifications
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        });
+
+        // Convert keys to base64url format
+        const p256dhKey = subscription.getKey('p256dh');
+        const authKey = subscription.getKey('auth');
+        
+        const base64UrlEncode = (arrayBuffer: ArrayBuffer): string => {
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          return btoa(binary)
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=/g, '');
+        };
+
+        // Send subscription to server
+        await subscribePushMutation.mutateAsync({
+          username: employeeAuth.username,
+          password: employeeAuth.password,
+          employeeId: employeeAuth.employeeId,
+          subscription: {
+            endpoint: subscription.endpoint,
+            keys: {
+              p256dh: base64UrlEncode(p256dhKey!),
+              auth: base64UrlEncode(authKey!),
+            },
+          },
+        });
+
+        console.log('Push notification subscription successful');
+      } catch (error) {
+        console.error('Error subscribing to push notifications:', error);
+      }
+    };
+
+    subscribeToPushNotifications();
+  }, [employeeAuth, vapidKeyQuery.data, subscribePushMutation]);
 
   // Update current time
   useEffect(() => {

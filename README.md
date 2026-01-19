@@ -155,6 +155,31 @@ DATABASE_URL=postgresql://user:password@host:5432/database
 pnpm db:push
 ```
 
+## Configuración de Notificaciones Push
+
+Para habilitar notificaciones push para empleados:
+
+1. Genera las claves VAPID:
+
+```bash
+node scripts/generate-vapid-keys.js
+```
+
+2. Agrega las claves a tu `.env.local`:
+
+```env
+VAPID_PUBLIC_KEY=tu-clave-publica-generada
+VAPID_PRIVATE_KEY=tu-clave-privada-generada
+VAPID_SUBJECT=mailto:admin@timeclock.app
+```
+
+3. También agrega estas variables en tu entorno de producción (Vercel/Render):
+   - `VAPID_PUBLIC_KEY`
+   - `VAPID_PRIVATE_KEY`
+   - `VAPID_SUBJECT` (opcional)
+
+Las notificaciones se envían automáticamente a los empleados en su hora de entrada programada. El sistema verifica cada minuto si hay empleados que necesitan notificaciones.
+
 ## Despliegue en Vercel
 
 ### 1. Preparar Proyecto
