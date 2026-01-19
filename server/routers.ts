@@ -39,6 +39,7 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+  }),
 
   publicApi: router({
     adminLogin: publicProcedure.input(
