@@ -986,8 +986,6 @@ export const appRouter = router({
     }),
   }),
 
-  }),
-
   // Incident management
   incident: router({
     getByEmployee: protectedProcedure.input(z.number()).query(async ({ input }) => {
