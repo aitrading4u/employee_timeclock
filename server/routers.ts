@@ -325,37 +325,6 @@ export const appRouter = router({
       return await getEmployeesByRestaurant(restaurant.id);
     }),
 
-    getEmployeeSchedule: publicProcedure.input(
-      z.object({
-        username: z.string().min(1),
-        password: z.string().min(1),
-        employeeId: z.number(),
-      })
-    ).query(async ({ input }) => {
-      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
-      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
-      if (input.username !== adminUsername || input.password !== adminPassword) {
-        throw new Error("Invalid admin credentials");
-      }
-      const scheduleRows = await getSchedulesByEmployee(input.employeeId);
-      const dayKeys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-      const scheduleMap: Record<string, { entry1: string; entry2: string; isActive: boolean }> = {};
-      for (const row of scheduleRows) {
-        const key = dayKeys[row.dayOfWeek] ?? "monday";
-        if (!scheduleMap[key]) {
-          scheduleMap[key] = { entry1: "", entry2: "", isActive: row.isWorkDay };
-        }
-        if (!row.isWorkDay) {
-          scheduleMap[key].isActive = false;
-        } else if (row.entrySlot === 2) {
-          scheduleMap[key].entry2 = row.entryTime;
-        } else {
-          scheduleMap[key].entry1 = row.entryTime;
-        }
-      }
-      return scheduleMap;
-    }),
-
     getEmployeeRestaurant: publicProcedure.input(
       z.object({
         username: z.string().min(1),
@@ -464,15 +433,24 @@ export const appRouter = router({
         employeeId: z.number(),
       })
     ).query(async ({ input }) => {
-      const employee = await getEmployeeByUsername(input.username);
-      if (!employee || employee.id !== input.employeeId) {
-        throw new Error("Empleado no encontrado");
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      const isAdmin = input.username === adminUsername && input.password === adminPassword;
+
+      let targetEmployeeId = input.employeeId;
+      if (!isAdmin) {
+        const employee = await getEmployeeByUsername(input.username);
+        if (!employee || employee.id !== input.employeeId) {
+          throw new Error("Empleado no encontrado");
+        }
+        const hashed = Buffer.from(input.password).toString("base64");
+        if (employee.password !== hashed) {
+          throw new Error("Credenciales inválidas");
+        }
+        targetEmployeeId = employee.id;
       }
-      const hashed = Buffer.from(input.password).toString("base64");
-      if (employee.password !== hashed) {
-        throw new Error("Credenciales inválidas");
-      }
-      const scheduleRows = await getSchedulesByEmployee(employee.id);
+
+      const scheduleRows = await getSchedulesByEmployee(targetEmployeeId);
       const dayKeys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
       const scheduleMap: Record<string, { entry1: string; entry2: string; isActive: boolean }> = {};
       for (const row of scheduleRows) {
