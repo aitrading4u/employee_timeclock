@@ -681,7 +681,8 @@ export const appRouter = router({
           throw new Error("Invalid employee credentials");
         }
 
-        if (employee.password !== input.password) {
+        const hashedPassword = Buffer.from(input.password).toString("base64");
+        if (employee.password !== hashedPassword) {
           throw new Error("Invalid employee credentials");
         }
 
