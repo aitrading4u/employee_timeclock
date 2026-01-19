@@ -1,19 +1,29 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { addDays, format } from "date-fns";
-import { useMemo } from "react";
+import { trpc } from "@/lib/trpc";
+import { useAuthContext } from "@/contexts/AuthContext";
 
 export default function EmployeeCalendar() {
   const [, setLocation] = useLocation();
+  const { employeeAuth } = useAuthContext();
   const [selectionMode, setSelectionMode] = useState<"single" | "range">("single");
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedRange, setSelectedRange] = useState<{ from?: Date; to?: Date } | undefined>();
   const [hoursWorked, setHoursWorked] = useState("");
   const [hourlyRate, setHourlyRate] = useState("");
+  const employeeTimeclocks = trpc.publicApi.getEmployeeTimeclocks.useQuery(
+    {
+      username: employeeAuth?.username || "",
+      password: employeeAuth?.password || "",
+      employeeId: employeeAuth?.employeeId || 0,
+    },
+    { enabled: Boolean(employeeAuth?.username && employeeAuth?.password && employeeAuth?.employeeId) }
+  );
 
   const salaryTotal = useMemo(() => {
     const hours = Number(hoursWorked);
@@ -21,6 +31,31 @@ export default function EmployeeCalendar() {
     if (Number.isNaN(hours) || Number.isNaN(rate)) return 0;
     return Math.max(hours, 0) * Math.max(rate, 0);
   }, [hoursWorked, hourlyRate]);
+
+  const filteredTimeclocks = (employeeTimeclocks.data || []).filter((entry) => {
+    const entryDate = new Date(entry.entryTime || entry.createdAt);
+    if (selectionMode === "range") {
+      if (!selectedRange?.from || !selectedRange?.to) return false;
+      const start = new Date(selectedRange.from);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(selectedRange.to);
+      end.setHours(23, 59, 59, 999);
+      return entryDate >= start && entryDate <= end;
+    }
+    if (!selectedDate) return false;
+    const day = new Date(selectedDate);
+    day.setHours(0, 0, 0, 0);
+    entryDate.setHours(0, 0, 0, 0);
+    return entryDate.getTime() === day.getTime();
+  });
+
+  const totalHours = filteredTimeclocks.reduce((total, entry) => {
+    if (!entry.entryTime || !entry.exitTime) return total;
+    const start = new Date(entry.entryTime).getTime();
+    const end = new Date(entry.exitTime).getTime();
+    if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return total;
+    return total + (end - start) / (1000 * 60 * 60);
+  }, 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -139,9 +174,44 @@ export default function EmployeeCalendar() {
                     : "Selecciona un día para ver el detalle."}
                 </p>
                 <p className="mt-3 text-sm text-foreground">
-                  Horas registradas: 0h
+                  Horas registradas: {totalHours.toFixed(2)}h
                 </p>
                 <p className="text-sm text-foreground">Incidencias: 0</p>
+              </div>
+              <div className="space-y-2">
+                {filteredTimeclocks.length ? (
+                  filteredTimeclocks.map((entry) => (
+                    <div key={entry.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
+                      <div>
+                        <p className="text-sm text-foreground">
+                          Entrada:{" "}
+                          {entry.entryTime
+                            ? new Date(entry.entryTime).toLocaleTimeString("es-ES", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Sin entrada"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Salida:{" "}
+                          {entry.exitTime
+                            ? new Date(entry.exitTime).toLocaleTimeString("es-ES", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Pendiente"}
+                        </p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {entry.entryTime
+                          ? new Date(entry.entryTime).toLocaleDateString("es-ES")
+                          : ""}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">No hay fichajes en este rango.</p>
+                )}
               </div>
               <div className="border border-border rounded-lg p-4 space-y-4">
                 <h3 className="text-sm font-semibold text-foreground">
