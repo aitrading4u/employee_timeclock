@@ -651,6 +651,81 @@ export const appRouter = router({
       });
       return { success: true };
     }),
+
+    pushNotifications: router({
+      getVapidPublicKey: publicProcedure.query(() => {
+        return { publicKey: getVapidPublicKey() };
+      }),
+
+      subscribe: publicProcedure.input(
+        z.object({
+          username: z.string().min(1),
+          password: z.string().min(1),
+          employeeId: z.number(),
+          subscription: z.object({
+            endpoint: z.string().url(),
+            keys: z.object({
+              p256dh: z.string(),
+              auth: z.string(),
+            }),
+          }),
+        })
+      ).mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const employee = await getEmployeeByUsername(input.username);
+        if (!employee || employee.id !== input.employeeId) {
+          throw new Error("Invalid employee credentials");
+        }
+
+        if (employee.password !== input.password) {
+          throw new Error("Invalid employee credentials");
+        }
+
+        const existing = await db
+          .select()
+          .from(pushSubscriptions)
+          .where(eq(pushSubscriptions.endpoint, input.subscription.endpoint))
+          .limit(1);
+
+        if (existing.length > 0) {
+          await db
+            .update(pushSubscriptions)
+            .set({
+              employeeId: input.employeeId,
+              p256dh: input.subscription.keys.p256dh,
+              auth: input.subscription.keys.auth,
+              updatedAt: new Date(),
+            })
+            .where(eq(pushSubscriptions.endpoint, input.subscription.endpoint));
+        } else {
+          await db.insert(pushSubscriptions).values({
+            employeeId: input.employeeId,
+            endpoint: input.subscription.endpoint,
+            p256dh: input.subscription.keys.p256dh,
+            auth: input.subscription.keys.auth,
+          });
+        }
+
+        return { success: true };
+      }),
+
+      unsubscribe: publicProcedure.input(
+        z.object({
+          endpoint: z.string().url(),
+        })
+      ).mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        await db
+          .delete(pushSubscriptions)
+          .where(eq(pushSubscriptions.endpoint, input.endpoint));
+
+        return { success: true };
+      }),
+    }),
   }),
 
   // Restaurant management
@@ -911,85 +986,6 @@ export const appRouter = router({
     }),
   }),
 
-    pushNotifications: router({
-      getVapidPublicKey: publicProcedure.query(() => {
-        return { publicKey: getVapidPublicKey() };
-      }),
-
-      subscribe: publicProcedure.input(
-        z.object({
-          username: z.string().min(1),
-          password: z.string().min(1),
-          employeeId: z.number(),
-          subscription: z.object({
-            endpoint: z.string().url(),
-            keys: z.object({
-              p256dh: z.string(),
-              auth: z.string(),
-            }),
-          }),
-        })
-      ).mutation(async ({ input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-
-        // Verify employee credentials
-        const employee = await getEmployeeByUsername(input.username);
-        if (!employee || employee.id !== input.employeeId) {
-          throw new Error("Invalid employee credentials");
-        }
-
-        // Simple password check (in production, use hashing)
-        if (employee.password !== input.password) {
-          throw new Error("Invalid employee credentials");
-        }
-
-        // Check if subscription already exists
-        const existing = await db
-          .select()
-          .from(pushSubscriptions)
-          .where(eq(pushSubscriptions.endpoint, input.subscription.endpoint))
-          .limit(1);
-
-        if (existing.length > 0) {
-          // Update existing subscription
-          await db
-            .update(pushSubscriptions)
-            .set({
-              employeeId: input.employeeId,
-              p256dh: input.subscription.keys.p256dh,
-              auth: input.subscription.keys.auth,
-              updatedAt: new Date(),
-            })
-            .where(eq(pushSubscriptions.endpoint, input.subscription.endpoint));
-        } else {
-          // Create new subscription
-          await db.insert(pushSubscriptions).values({
-            employeeId: input.employeeId,
-            endpoint: input.subscription.endpoint,
-            p256dh: input.subscription.keys.p256dh,
-            auth: input.subscription.keys.auth,
-          });
-        }
-
-        return { success: true };
-      }),
-
-      unsubscribe: publicProcedure.input(
-        z.object({
-          endpoint: z.string().url(),
-        })
-      ).mutation(async ({ input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("Database not available");
-
-        await db
-          .delete(pushSubscriptions)
-          .where(eq(pushSubscriptions.endpoint, input.endpoint));
-
-        return { success: true };
-      }),
-    }),
   }),
 
   // Incident management
