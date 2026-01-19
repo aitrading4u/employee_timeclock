@@ -114,16 +114,16 @@ export default function AdminDashboard() {
     { username: adminUsername, password: adminPassword },
     { enabled: Boolean(adminUsername && adminPassword) }
   );
-  const timeclocksQuery = trpc.publicApi.getTimeclocksByEmployee.useQuery(
-    {
-      username: adminUsername,
-      password: adminPassword,
-      employeeId: Number(selectedEmployeeId || 0),
-    },
-    { enabled: Boolean(adminUsername && adminPassword && selectedEmployeeId) }
+  const timeclocksQuery = trpc.publicApi.listTimeclocks.useQuery(
+    { username: adminUsername, password: adminPassword },
+    { enabled: Boolean(adminUsername && adminPassword) }
   );
 
-  const filteredTimeclocks = (timeclocksQuery.data || []).filter((entry) => {
+  const filteredTimeclocks = (timeclocksQuery.data || [])
+    .filter((entry) =>
+      selectedEmployeeId ? String(entry.employeeId) === selectedEmployeeId : true
+    )
+    .filter((entry) => {
     if (!rangeStart && !rangeEnd) return true;
     const entryDate = new Date(entry.entryTime || entry.createdAt);
     if (rangeStart) {
@@ -138,6 +138,10 @@ export default function AdminDashboard() {
     }
     return true;
   });
+
+  const employeeNameById = new Map(
+    (listEmployees.data || []).map((employee) => [employee.id, employee.name])
+  );
 
   const totalHours = filteredTimeclocks.reduce((total, entry) => {
     if (!entry.entryTime || !entry.exitTime) return total;
@@ -689,12 +693,32 @@ export default function AdminDashboard() {
                     <div key={entry.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
                       <div>
                         <p className="text-sm text-foreground">
-                          {entry.entryTime
-                            ? new Date(entry.entryTime).toLocaleString("es-ES")
-                            : "Sin entrada"}
+                          {employeeNameById.get(entry.employeeId) || `Empleado #${entry.employeeId}`}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Salida: {entry.exitTime ? new Date(entry.exitTime).toLocaleString("es-ES") : "Pendiente"}
+                          Entrada:{" "}
+                          {entry.entryTime
+                            ? new Date(entry.entryTime).toLocaleTimeString("es-ES", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Sin entrada"}
+                          {" · "}
+                          {entry.entryTime
+                            ? new Date(entry.entryTime).toLocaleDateString("es-ES")
+                            : ""}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Salida:{" "}
+                          {entry.exitTime
+                            ? new Date(entry.exitTime).toLocaleTimeString("es-ES", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Pendiente"}
+                          {entry.exitTime
+                            ? ` · ${new Date(entry.exitTime).toLocaleDateString("es-ES")}`
+                            : ""}
                         </p>
                       </div>
                       <span className="text-sm text-muted-foreground">

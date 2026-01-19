@@ -414,6 +414,30 @@ export const appRouter = router({
       return allIncidents.filter((incident) => employeeIds.includes(incident.employeeId));
     }),
 
+    listTimeclocks: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+      })
+    ).query(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const admin = await getOrCreateLocalAdmin(input.username);
+      if (!admin) return [];
+      const restaurant = await getRestaurantByAdmin(admin.id);
+      if (!restaurant) return [];
+      const restaurantEmployees = await getEmployeesByRestaurant(restaurant.id);
+      const employeeIds = restaurantEmployees.map((e) => e.id);
+      if (employeeIds.length === 0) return [];
+      const db = await getDb();
+      if (!db) return [];
+      const allTimeclocks = await db.select().from(timeclocks);
+      return allTimeclocks.filter((entry) => employeeIds.includes(entry.employeeId));
+    }),
+
     getEmployeeTimeclocks: publicProcedure.input(
       z.object({
         username: z.string().min(1),
