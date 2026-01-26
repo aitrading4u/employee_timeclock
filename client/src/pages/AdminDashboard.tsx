@@ -33,6 +33,9 @@ export default function AdminDashboard() {
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
   const [incidentEmployeeId, setIncidentEmployeeId] = useState('');
+  const [editingTimeclockId, setEditingTimeclockId] = useState<number | null>(null);
+  const [editingEntryTime, setEditingEntryTime] = useState('');
+  const [editingExitTime, setEditingExitTime] = useState('');
   const [employeeSchedule, setEmployeeSchedule] = useState(() => ({
     monday: { entry1: '', entry2: '', isActive: true },
     tuesday: { entry1: '', entry2: '', isActive: true },
@@ -88,6 +91,16 @@ export default function AdminDashboard() {
     return Math.max(hours, 0) * Math.max(rate, 0);
   })();
 
+  const formatDateTimeInput = (value?: string | Date | null) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (num: number) => String(num).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+      date.getHours()
+    )}:${pad(date.getMinutes())}`;
+  };
+
   const { adminAuth, setAdminAuth } = useAuthContext();
   const adminUsername = adminAuth?.username || '';
   const adminPassword = adminAuth?.password || '';
@@ -119,6 +132,7 @@ export default function AdminDashboard() {
     { username: adminUsername, password: adminPassword },
     { enabled: Boolean(adminUsername && adminPassword) }
   );
+  const updateTimeclock = trpc.publicApi.updateTimeclock.useMutation();
 
   const filteredTimeclocks = (timeclocksQuery.data || [])
     .filter((entry) =>
@@ -174,6 +188,55 @@ export default function AdminDashboard() {
         isActive: !prev[day].isActive,
       },
     }));
+  };
+
+  const handleEditTimeclock = (entry: { id: number; entryTime?: string | null; exitTime?: string | null }) => {
+    setEditingTimeclockId(entry.id);
+    setEditingEntryTime(formatDateTimeInput(entry.entryTime));
+    setEditingExitTime(formatDateTimeInput(entry.exitTime));
+  };
+
+  const handleCancelTimeclockEdit = () => {
+    setEditingTimeclockId(null);
+    setEditingEntryTime('');
+    setEditingExitTime('');
+  };
+
+  const handleSaveTimeclock = () => {
+    if (!editingTimeclockId) return;
+    if (!editingEntryTime) {
+      toast.error('La hora de entrada es obligatoria');
+      return;
+    }
+    if (editingExitTime) {
+      const entryDate = new Date(editingEntryTime);
+      const exitDate = new Date(editingExitTime);
+      if (Number.isNaN(entryDate.getTime()) || Number.isNaN(exitDate.getTime())) {
+        toast.error('Formato de fecha inválido');
+        return;
+      }
+      if (exitDate <= entryDate) {
+        toast.error('La salida debe ser posterior a la entrada');
+        return;
+      }
+    }
+    updateTimeclock
+      .mutateAsync({
+        username: adminUsername,
+        password: adminPassword,
+        timeclockId: editingTimeclockId,
+        entryTime: editingEntryTime,
+        exitTime: editingExitTime || null,
+      })
+      .then(() => {
+        toast.success('Fichaje actualizado');
+        handleCancelTimeclockEdit();
+        timeclocksQuery.refetch();
+      })
+      .catch((error) => {
+        toast.error('No se pudo actualizar el fichaje');
+        console.error(error);
+      });
   };
 
   const handleLogout = () => {
@@ -717,8 +780,8 @@ export default function AdminDashboard() {
               <div className="mt-4 space-y-2">
                 {filteredTimeclocks.length ? (
                   filteredTimeclocks.map((entry) => (
-                    <div key={entry.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
-                      <div>
+                    <div key={entry.id} className="flex items-start justify-between gap-4 p-3 border border-border rounded-lg">
+                      <div className="flex-1">
                         <p className="text-sm text-foreground">
                           {employeeNameById.get(entry.employeeId) || `Empleado #${entry.employeeId}`}
                         </p>
@@ -747,10 +810,56 @@ export default function AdminDashboard() {
                             ? ` · ${new Date(entry.exitTime).toLocaleDateString("es-ES")}`
                             : ""}
                         </p>
+                        {editingTimeclockId === entry.id && (
+                          <div className="mt-3 grid gap-3 rounded-lg border border-border bg-background p-3">
+                            <div>
+                              <label className="block text-xs font-medium text-foreground mb-1">
+                                Entrada
+                              </label>
+                              <input
+                                type="datetime-local"
+                                value={editingEntryTime}
+                                onChange={(event) => setEditingEntryTime(event.target.value)}
+                                className="input-elegant"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-foreground mb-1">
+                                Salida
+                              </label>
+                              <input
+                                type="datetime-local"
+                                value={editingExitTime}
+                                onChange={(event) => setEditingExitTime(event.target.value)}
+                                className="input-elegant"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Deja vacío si no hay salida registrada.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button size="sm" onClick={handleSaveTimeclock}>
+                                Guardar cambios
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={handleCancelTimeclockEdit}>
+                                Cancelar
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <span className="text-sm text-muted-foreground">
-                        {entry.isLate ? "Retraso" : "OK"}
-                      </span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className="text-sm text-muted-foreground">
+                          {entry.isLate ? "Retraso" : "OK"}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleEditTimeclock(entry)}
+                        >
+                          Editar
+                        </Button>
+                      </div>
                     </div>
                   ))
                 ) : (

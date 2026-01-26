@@ -16,7 +16,8 @@ import {
   getSchedulesByEmployee,
   getIncidentById,
   getEmployeeByUsername,
-  getOrCreateLocalAdmin
+  getOrCreateLocalAdmin,
+  getTimeclockById
 } from "./db";
 import { getVapidPublicKey } from "./notificationService";
 import { restaurants, employees, schedules, timeclocks, incidents, users, pushSubscriptions, notificationLogs } from "../drizzle/schema";
@@ -410,6 +411,66 @@ export const appRouter = router({
       if (!db) return [];
       const allTimeclocks = await db.select().from(timeclocks);
       return allTimeclocks.filter((entry) => employeeIds.includes(entry.employeeId));
+    }),
+
+    updateTimeclock: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        timeclockId: z.number(),
+        entryTime: z.string().optional().nullable(),
+        exitTime: z.string().optional().nullable(),
+      })
+    ).mutation(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const admin = await getOrCreateLocalAdmin(input.username);
+      if (!admin) throw new Error("Admin not available");
+      const restaurant = await getRestaurantByAdmin(admin.id);
+      if (!restaurant) throw new Error("Restaurant not found");
+      const restaurantEmployees = await getEmployeesByRestaurant(restaurant.id);
+      const employeeIds = new Set(restaurantEmployees.map((employee) => employee.id));
+
+      const timeclock = await getTimeclockById(input.timeclockId);
+      if (!timeclock || !employeeIds.has(timeclock.employeeId)) {
+        throw new Error("Timeclock not found");
+      }
+
+      const normalizeDate = (value: string | null | undefined) => {
+        if (value === undefined) return undefined;
+        if (value === null || value.trim() === "") return null;
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          throw new Error("Fecha inválida");
+        }
+        return parsed;
+      };
+
+      const entryTime = normalizeDate(input.entryTime);
+      const exitTime = normalizeDate(input.exitTime);
+
+      if (entryTime && exitTime && exitTime <= entryTime) {
+        throw new Error("Exit time must be after entry time");
+      }
+
+      const updateData: Record<string, unknown> = {};
+      if (entryTime !== undefined) {
+        updateData.entryTime = entryTime;
+      }
+      if (exitTime !== undefined) {
+        updateData.exitTime = exitTime;
+      }
+      if (Object.keys(updateData).length === 0) {
+        return { success: true };
+      }
+
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      await db.update(timeclocks).set(updateData).where(eq(timeclocks.id, input.timeclockId));
+      return { success: true };
     }),
 
     getEmployeeTimeclocks: publicProcedure.input(
