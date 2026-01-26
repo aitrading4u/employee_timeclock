@@ -4,6 +4,12 @@
   "installCommand": "pnpm install",
   "framework": "vite",
   "outputDirectory": "dist/public",
+  "crons": [
+    {
+      "path": "/api/cron/notifications",
+      "schedule": "*/1 * * * *"
+    }
+  ],
   "routes": [
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }

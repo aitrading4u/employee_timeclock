@@ -66,16 +66,50 @@ export async function sendPushNotification(
  * Check and send notifications for employees who need to clock in
  * This should be called periodically (e.g., every minute via cron)
  */
-export async function checkAndSendNotifications(): Promise<void> {
+type NotificationOptions = {
+  timeZone?: string;
+  leadMinutes?: number;
+};
+
+const DEFAULT_TIME_ZONE = "Europe/Madrid";
+
+function getTimePartsInTimeZone(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const lookup = (type: string) => parts.find(p => p.type === type)?.value ?? "00";
+  return {
+    year: Number(lookup("year")),
+    month: Number(lookup("month")),
+    day: Number(lookup("day")),
+    hour: Number(lookup("hour")),
+    minute: Number(lookup("minute")),
+  };
+}
+
+export async function checkAndSendNotifications(
+  options: NotificationOptions = {}
+): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
   const now = new Date();
-  const currentDay = now.getDay(); // 0-6 (Sunday-Saturday)
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
-  // Create date object for today (start of day) for comparison
-  const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const timeZone = options.timeZone || DEFAULT_TIME_ZONE;
+  const leadMinutes = Math.max(0, options.leadMinutes ?? 0);
+  const { year, month, day, hour, minute } = getTimePartsInTimeZone(now, timeZone);
+  const currentDate = new Date(year, month - 1, day, hour, minute, 0, 0);
+  const currentDay = currentDate.getDay(); // 0-6 (Sunday-Saturday)
+  const currentHour = currentDate.getHours();
+  const currentMinute = currentDate.getMinutes();
+  // Date-only value for schedule logging
+  const todayDate = new Date(year, month - 1, day);
 
   // Get all active employees with schedules for today
   const todaySchedules = await db
@@ -95,9 +129,10 @@ export async function checkAndSendNotifications(): Promise<void> {
     // This handles cases where the server was down or there was a delay
     const scheduleTime = scheduleHour * 60 + scheduleMinute;
     const currentTime = currentHour * 60 + currentMinute;
-    const timeDiff = currentTime - scheduleTime;
-    
-    // Send notification if we're at the scheduled time or up to 1 minute after
+    const notifyAt = scheduleTime - leadMinutes;
+    const timeDiff = currentTime - notifyAt;
+
+    // Send notification at lead time or up to 1 minute after
     if (timeDiff >= 0 && timeDiff <= 1) {
       // Check if we already sent a notification for this time today
       const existingLog = await db
