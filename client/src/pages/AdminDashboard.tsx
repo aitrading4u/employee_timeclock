@@ -810,6 +810,17 @@ export default function AdminDashboard() {
                             ? ` · ${new Date(entry.exitTime).toLocaleDateString("es-ES")}`
                             : ""}
                         </p>
+                        {editingTimeclockId !== entry.id && (
+                          <div className="mt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleEditTimeclock(entry)}
+                            >
+                              Editar fichaje
+                            </Button>
+                          </div>
+                        )}
                         {editingTimeclockId === entry.id && (
                           <div className="mt-3 grid gap-3 rounded-lg border border-border bg-background p-3">
                             <div>
@@ -852,13 +863,6 @@ export default function AdminDashboard() {
                         <span className="text-sm text-muted-foreground">
                           {entry.isLate ? "Retraso" : "OK"}
                         </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleEditTimeclock(entry)}
-                        >
-                          Editar
-                        </Button>
                       </div>
                     </div>
                   ))
