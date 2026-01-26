@@ -604,18 +604,21 @@ export const appRouter = router({
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayTimeclocks = await getTimeclocksByEmployee(input.employeeId);
-      const todayRecord = todayTimeclocks.find(tc => {
+      const openRecord = todayTimeclocks.find(tc => {
         const tcDate = new Date(tc.createdAt);
         tcDate.setHours(0, 0, 0, 0);
-        return tcDate.getTime() === today.getTime() && tc.entryTime;
+        return tcDate.getTime() === today.getTime() && tc.entryTime && !tc.exitTime;
       });
-      if (todayRecord) throw new Error("Already clocked in today");
+      if (openRecord) throw new Error("You must clock out before clocking in again");
       const now = new Date();
       const dayOfWeek = now.getDay();
-      const hasPreviousShift = todayTimeclocks.some(tc => tc.exitTime);
-      const schedule = hasPreviousShift
-        ? await getScheduleByEmployeeDayAndSlot(input.employeeId, dayOfWeek, 2)
-        : await getScheduleByEmployeeAndDay(input.employeeId, dayOfWeek);
+      const completedShifts = todayTimeclocks.filter(tc => tc.exitTime).length;
+      const schedule =
+        completedShifts === 0
+          ? await getScheduleByEmployeeAndDay(input.employeeId, dayOfWeek)
+          : completedShifts === 1
+          ? await getScheduleByEmployeeDayAndSlot(input.employeeId, dayOfWeek, 2)
+          : undefined;
       let isLate = false;
       const graceMinutes = employee.lateGraceMinutes ?? 5;
       if (schedule && schedule.isWorkDay && schedule.entryTime !== "00:00") {
@@ -961,20 +964,25 @@ export const appRouter = router({
       today.setHours(0, 0, 0, 0);
       
       const todayTimeclocks = await getTimeclocksByEmployee(input.employeeId);
-      const todayRecord = todayTimeclocks.find(tc => {
+      const openRecord = todayTimeclocks.find(tc => {
         const tcDate = new Date(tc.createdAt);
         tcDate.setHours(0, 0, 0, 0);
-        return tcDate.getTime() === today.getTime() && tc.entryTime;
+        return tcDate.getTime() === today.getTime() && tc.entryTime && !tc.exitTime;
       });
-      
-      if (todayRecord) {
-        throw new Error('Already clocked in today');
+      if (openRecord) {
+        throw new Error('You must clock out before clocking in again');
       }
       
       // Check if late
       const now = new Date();
       const dayOfWeek = now.getDay();
-      const schedule = await getScheduleByEmployeeAndDay(input.employeeId, dayOfWeek);
+      const completedShifts = todayTimeclocks.filter(tc => tc.exitTime).length;
+      const schedule =
+        completedShifts === 0
+          ? await getScheduleByEmployeeAndDay(input.employeeId, dayOfWeek)
+          : completedShifts === 1
+          ? await getScheduleByEmployeeDayAndSlot(input.employeeId, dayOfWeek, 2)
+          : undefined;
       
       let isLate = false;
       const graceMinutes = employee.lateGraceMinutes ?? 5;
