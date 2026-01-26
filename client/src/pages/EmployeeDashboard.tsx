@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -36,6 +36,7 @@ export default function EmployeeDashboard() {
   const [isLate, setIsLate] = useState(false);
   const [isWorkDay, setIsWorkDay] = useState(true);
   const [lastClockOut, setLastClockOut] = useState<Date | null>(null);
+  const notificationWarningShown = useRef(false);
 
   const employeeTimeclocks = trpc.publicApi.getEmployeeTimeclocks.useQuery(
     {
@@ -154,6 +155,14 @@ export default function EmployeeDashboard() {
 
     subscribeToPushNotifications();
   }, [employeeAuth, vapidKeyQuery.data, subscribePushMutation]);
+
+  useEffect(() => {
+    if (!employeeAuth || !vapidKeyQuery.isSuccess) return;
+    if (!vapidKeyQuery.data?.publicKey && !notificationWarningShown.current) {
+      notificationWarningShown.current = true;
+      toast.error("Notificaciones no configuradas. Contacta con el administrador.");
+    }
+  }, [employeeAuth, vapidKeyQuery.isSuccess, vapidKeyQuery.data]);
 
   // Update current time
   useEffect(() => {

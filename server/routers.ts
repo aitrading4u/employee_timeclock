@@ -19,7 +19,7 @@ import {
   getOrCreateLocalAdmin,
   getTimeclockById
 } from "./db";
-import { getVapidPublicKey } from "./notificationService";
+import { getVapidPublicKey, sendPushNotification } from "./notificationService";
 import { restaurants, employees, schedules, timeclocks, incidents, users, pushSubscriptions, notificationLogs } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 
@@ -792,6 +792,64 @@ export const appRouter = router({
 
         return { success: true };
       }),
+    }),
+
+    sendTestNotification: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number(),
+      })
+    ).mutation(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      if (!getVapidPublicKey()) {
+        throw new Error("Push notifications are not configured");
+      }
+
+      const subscriptions = await db
+        .select()
+        .from(pushSubscriptions)
+        .where(eq(pushSubscriptions.employeeId, input.employeeId));
+
+      if (subscriptions.length === 0) {
+        throw new Error("No hay dispositivos suscritos para este empleado");
+      }
+
+      let successCount = 0;
+      let failCount = 0;
+      for (const sub of subscriptions) {
+        try {
+          await sendPushNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: {
+                p256dh: sub.p256dh,
+                auth: sub.auth,
+              },
+            },
+            "🔔 Notificación de prueba",
+            "Esta es una notificación de prueba de TimeClock.",
+            { url: "/employee/dashboard" }
+          );
+          successCount += 1;
+        } catch (error) {
+          console.error("Test notification failed:", error);
+          failCount += 1;
+        }
+      }
+
+      if (successCount === 0) {
+        throw new Error("No se pudo enviar ninguna notificación");
+      }
+
+      return { success: true, sent: successCount, failed: failCount };
     }),
   }),
 

@@ -101,6 +101,19 @@ export default function AdminDashboard() {
     )}:${pad(date.getMinutes())}`;
   };
 
+  const splitDateTimeInput = (value: string) => {
+    if (!value) return { date: '', time: '' };
+    const [date = '', time = ''] = value.split('T');
+    return { date, time: time.slice(0, 5) };
+  };
+
+  const buildDateTimeInput = (date: string, time: string) => {
+    if (!date && !time) return '';
+    if (!date) return '';
+    if (!time) return `${date}T00:00`;
+    return `${date}T${time}`;
+  };
+
   const { adminAuth, setAdminAuth } = useAuthContext();
   const adminUsername = adminAuth?.username || '';
   const adminPassword = adminAuth?.password || '';
@@ -133,6 +146,7 @@ export default function AdminDashboard() {
     { enabled: Boolean(adminUsername && adminPassword) }
   );
   const updateTimeclock = trpc.publicApi.updateTimeclock.useMutation();
+  const sendTestNotification = trpc.publicApi.sendTestNotification.useMutation();
 
   const filteredTimeclocks = (timeclocksQuery.data || [])
     .filter((entry) =>
@@ -235,6 +249,26 @@ export default function AdminDashboard() {
       })
       .catch((error) => {
         toast.error('No se pudo actualizar el fichaje');
+        console.error(error);
+      });
+  };
+
+  const handleSendTestNotification = () => {
+    if (!selectedEmployeeId) {
+      toast.error('Selecciona un empleado primero');
+      return;
+    }
+    sendTestNotification
+      .mutateAsync({
+        username: adminUsername,
+        password: adminPassword,
+        employeeId: Number(selectedEmployeeId),
+      })
+      .then((result) => {
+        toast.success(`Notificación enviada (${result.sent} ok${result.failed ? `, ${result.failed} fallidas` : ''})`);
+      })
+      .catch((error) => {
+        toast.error(error?.message || 'No se pudo enviar la notificación');
         console.error(error);
       });
   };
@@ -746,6 +780,16 @@ export default function AdminDashboard() {
                     ))}
                   </select>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleSendTestNotification}
+                    disabled={!selectedEmployeeId || sendTestNotification.isPending}
+                  >
+                    {sendTestNotification.isPending ? "Enviando..." : "Enviar notificación de prueba"}
+                  </Button>
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -831,8 +875,36 @@ export default function AdminDashboard() {
                                 type="datetime-local"
                                 value={editingEntryTime}
                                 onChange={(event) => setEditingEntryTime(event.target.value)}
-                                className="input-elegant"
+                                className="input-elegant hidden sm:block"
                               />
+                              <div className="grid grid-cols-2 gap-2 sm:hidden">
+                                <input
+                                  type="date"
+                                  value={splitDateTimeInput(editingEntryTime).date}
+                                  onChange={(event) =>
+                                    setEditingEntryTime(
+                                      buildDateTimeInput(
+                                        event.target.value,
+                                        splitDateTimeInput(editingEntryTime).time
+                                      )
+                                    )
+                                  }
+                                  className="input-elegant"
+                                />
+                                <input
+                                  type="time"
+                                  value={splitDateTimeInput(editingEntryTime).time}
+                                  onChange={(event) =>
+                                    setEditingEntryTime(
+                                      buildDateTimeInput(
+                                        splitDateTimeInput(editingEntryTime).date,
+                                        event.target.value
+                                      )
+                                    )
+                                  }
+                                  className="input-elegant"
+                                />
+                              </div>
                             </div>
                             <div>
                               <label className="block text-xs font-medium text-foreground mb-1">
@@ -842,8 +914,36 @@ export default function AdminDashboard() {
                                 type="datetime-local"
                                 value={editingExitTime}
                                 onChange={(event) => setEditingExitTime(event.target.value)}
-                                className="input-elegant"
+                                className="input-elegant hidden sm:block"
                               />
+                              <div className="grid grid-cols-2 gap-2 sm:hidden">
+                                <input
+                                  type="date"
+                                  value={splitDateTimeInput(editingExitTime).date}
+                                  onChange={(event) =>
+                                    setEditingExitTime(
+                                      buildDateTimeInput(
+                                        event.target.value,
+                                        splitDateTimeInput(editingExitTime).time
+                                      )
+                                    )
+                                  }
+                                  className="input-elegant"
+                                />
+                                <input
+                                  type="time"
+                                  value={splitDateTimeInput(editingExitTime).time}
+                                  onChange={(event) =>
+                                    setEditingExitTime(
+                                      buildDateTimeInput(
+                                        splitDateTimeInput(editingExitTime).date,
+                                        event.target.value
+                                      )
+                                    )
+                                  }
+                                  className="input-elegant"
+                                />
+                              </div>
                               <p className="text-xs text-muted-foreground mt-1">
                                 Deja vacío si no hay salida registrada.
                               </p>
