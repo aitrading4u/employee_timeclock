@@ -21,7 +21,7 @@ import {
 } from "./db";
 import { getVapidPublicKey, sendPushNotification } from "./notificationService";
 import { restaurants, employees, schedules, timeclocks, incidents, users, pushSubscriptions, notificationLogs } from "../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') {
@@ -411,6 +411,44 @@ export const appRouter = router({
       if (!db) return [];
       const allTimeclocks = await db.select().from(timeclocks);
       return allTimeclocks.filter((entry) => employeeIds.includes(entry.employeeId));
+    }),
+
+    listNotificationLogs: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        employeeId: z.number().optional(),
+      })
+    ).query(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const admin = await getOrCreateLocalAdmin(input.username);
+      if (!admin) return [];
+      const restaurant = await getRestaurantByAdmin(admin.id);
+      if (!restaurant) return [];
+      const restaurantEmployees = await getEmployeesByRestaurant(restaurant.id);
+      const employeeIds = restaurantEmployees.map((e) => e.id);
+      if (employeeIds.length === 0) return [];
+      if (input.employeeId && !employeeIds.includes(input.employeeId)) {
+        return [];
+      }
+      const db = await getDb();
+      if (!db) return [];
+      const whereClause = input.employeeId
+        ? and(
+            eq(notificationLogs.employeeId, input.employeeId),
+            inArray(notificationLogs.employeeId, employeeIds)
+          )
+        : inArray(notificationLogs.employeeId, employeeIds);
+      return await db
+        .select()
+        .from(notificationLogs)
+        .where(whereClause)
+        .orderBy(desc(notificationLogs.notifiedAt))
+        .limit(50);
     }),
 
     updateTimeclock: publicProcedure.input(

@@ -145,6 +145,14 @@ export default function AdminDashboard() {
     { username: adminUsername, password: adminPassword },
     { enabled: Boolean(adminUsername && adminPassword) }
   );
+  const notificationLogsQuery = trpc.publicApi.listNotificationLogs.useQuery(
+    {
+      username: adminUsername,
+      password: adminPassword,
+      employeeId: selectedEmployeeId ? Number(selectedEmployeeId) : undefined,
+    },
+    { enabled: Boolean(adminUsername && adminPassword) }
+  );
   const updateTimeclock = trpc.publicApi.updateTimeclock.useMutation();
   const sendTestNotification = trpc.publicApi.sendTestNotification.useMutation();
 
@@ -968,6 +976,53 @@ export default function AdminDashboard() {
                   ))
                 ) : (
                   <p className="text-sm text-muted-foreground">No hay fichajes en este rango.</p>
+                )}
+              </div>
+              <div className="mt-6 border border-border rounded-lg p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Historial de notificaciones
+                </h3>
+                {notificationLogsQuery.data?.length ? (
+                  <div className="space-y-2">
+                    {notificationLogsQuery.data.map((log) => {
+                      const label =
+                        log.entrySlot === 0
+                          ? "Recordatorio salida"
+                          : log.entrySlot === 2
+                          ? "Entrada programada (2)"
+                          : "Entrada programada (1)";
+                      return (
+                        <div
+                          key={`${log.employeeId}-${log.notifiedAt}`}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2"
+                        >
+                          <div>
+                            <p className="text-sm text-foreground">
+                              {employeeNameById.get(log.employeeId) || `Empleado #${log.employeeId}`}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {label} · {log.entryTime} ·{" "}
+                              {log.scheduleDate
+                                ? new Date(log.scheduleDate).toLocaleDateString("es-ES")
+                                : ""}
+                            </p>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {log.notifiedAt
+                              ? new Date(log.notifiedAt).toLocaleString("es-ES", {
+                                  dateStyle: "short",
+                                  timeStyle: "short",
+                                })
+                              : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No hay notificaciones registradas.
+                  </p>
                 )}
               </div>
               <div className="mt-6 border border-border rounded-lg p-4 space-y-4">

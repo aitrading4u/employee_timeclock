@@ -1,7 +1,7 @@
 import webpush from "web-push";
 import { getDb } from "./db";
 import { pushSubscriptions, notificationLogs, schedules, timeclocks } from "../drizzle/schema";
-import { eq, and, gte, lt } from "drizzle-orm";
+import { eq, and, gte, lt, inArray, isNull } from "drizzle-orm";
 
 // VAPID keys - these should be set as environment variables
 // Generate with: npx web-push generate-vapid-keys
@@ -72,6 +72,11 @@ type NotificationOptions = {
 };
 
 const DEFAULT_TIME_ZONE = "Europe/Madrid";
+const EXIT_REMINDER_STARTS = [
+  { time: "15:30", intervalMinutes: 30, repeats: 3 },
+  { time: "22:30", intervalMinutes: 30, repeats: 3 },
+];
+const EXIT_REMINDER_SLOT = 0;
 
 function getTimePartsInTimeZone(date: Date, timeZone: string) {
   const formatter = new Intl.DateTimeFormat("en-US", {
@@ -92,6 +97,44 @@ function getTimePartsInTimeZone(date: Date, timeZone: string) {
     hour: Number(lookup("hour")),
     minute: Number(lookup("minute")),
   };
+}
+
+function getDateKeyInTimeZone(date: Date, timeZone: string) {
+  const { year, month, day } = getTimePartsInTimeZone(date, timeZone);
+  const pad = (num: number) => String(num).padStart(2, "0");
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function parseTimeToMinutes(time: string) {
+  const [hour, minute] = time.split(":").map(Number);
+  return hour * 60 + minute;
+}
+
+function formatMinutesToTime(minutes: number) {
+  const normalized = ((minutes % 1440) + 1440) % 1440;
+  const hour = Math.floor(normalized / 60);
+  const minute = normalized % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function buildExitReminderSlots() {
+  const slots: Array<{ minuteOfDay: number; scheduleDateOffset: number }> = [];
+  for (const start of EXIT_REMINDER_STARTS) {
+    const baseMinutes = parseTimeToMinutes(start.time);
+    for (let i = 0; i <= start.repeats; i += 1) {
+      const total = baseMinutes + i * start.intervalMinutes;
+      const minuteOfDay = total % 1440;
+      const scheduleDateOffset = total >= 1440 ? -1 : 0;
+      slots.push({ minuteOfDay, scheduleDateOffset });
+    }
+  }
+  return slots;
 }
 
 export async function checkAndSendNotifications(
@@ -213,6 +256,99 @@ export async function checkAndSendNotifications(
           });
         } catch (error) {
           console.error(`Failed to send notification to employee ${schedule.employeeId}:`, error);
+        }
+      }
+    }
+  }
+
+  const exitReminderSlots = buildExitReminderSlots();
+  const currentMinutes = currentHour * 60 + currentMinute;
+  const matchingSlots = exitReminderSlots.filter(slot => {
+    const diff = currentMinutes - slot.minuteOfDay;
+    return diff >= 0 && diff <= 1;
+  });
+
+  if (matchingSlots.length === 0) return;
+
+  const openTimeclocks = await db
+    .select()
+    .from(timeclocks)
+    .where(isNull(timeclocks.exitTime));
+
+  if (openTimeclocks.length === 0) return;
+
+  const openByEmployee = new Map<number, typeof openTimeclocks>();
+  for (const clock of openTimeclocks) {
+    if (!clock.entryTime) continue;
+    const list = openByEmployee.get(clock.employeeId) || [];
+    list.push(clock);
+    openByEmployee.set(clock.employeeId, list);
+  }
+
+  for (const slot of matchingSlots) {
+    const reminderDate = addDays(currentDate, slot.scheduleDateOffset);
+    const reminderDateKey = getDateKeyInTimeZone(reminderDate, timeZone);
+    const reminderTime = formatMinutesToTime(slot.minuteOfDay);
+
+    const candidateEmployeeIds: number[] = [];
+    for (const [employeeId, clocks] of openByEmployee.entries()) {
+      const hasOpenOnDate = clocks.some(clock => {
+        if (!clock.entryTime) return false;
+        const entryDateKey = getDateKeyInTimeZone(new Date(clock.entryTime), timeZone);
+        return entryDateKey === reminderDateKey;
+      });
+      if (hasOpenOnDate) {
+        candidateEmployeeIds.push(employeeId);
+      }
+    }
+
+    if (candidateEmployeeIds.length === 0) continue;
+
+    const existingLogs = await db
+      .select()
+      .from(notificationLogs)
+      .where(
+        and(
+          inArray(notificationLogs.employeeId, candidateEmployeeIds),
+          eq(notificationLogs.entrySlot, EXIT_REMINDER_SLOT),
+          eq(notificationLogs.entryTime, reminderTime),
+          eq(notificationLogs.scheduleDate, reminderDate)
+        )
+      );
+    const alreadyNotified = new Set(existingLogs.map(log => log.employeeId));
+
+    for (const employeeId of candidateEmployeeIds) {
+      if (alreadyNotified.has(employeeId)) continue;
+      const subscriptions = await db
+        .select()
+        .from(pushSubscriptions)
+        .where(eq(pushSubscriptions.employeeId, employeeId));
+
+      if (subscriptions.length === 0) continue;
+
+      for (const sub of subscriptions) {
+        try {
+          await sendPushNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: {
+                p256dh: sub.p256dh,
+                auth: sub.auth,
+              },
+            },
+            "⏰ Recuerda fichar la salida",
+            "No olvides registrar tu salida cuando termines.",
+            { url: "/employee/dashboard" }
+          );
+
+          await db.insert(notificationLogs).values({
+            employeeId,
+            entryTime: reminderTime,
+            scheduleDate: reminderDate,
+            entrySlot: EXIT_REMINDER_SLOT,
+          });
+        } catch (error) {
+          console.error(`Failed to send exit reminder to employee ${employeeId}:`, error);
         }
       }
     }
