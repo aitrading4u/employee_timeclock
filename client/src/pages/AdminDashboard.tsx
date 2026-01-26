@@ -861,7 +861,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex flex-col items-end gap-2">
                         <span className="text-sm text-muted-foreground">
-                          {entry.isLate ? "Retraso" : "OK"}
+                          {entry.isLate ? "Tarde" : "OK"}
                         </span>
                       </div>
                     </div>

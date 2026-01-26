@@ -403,7 +403,7 @@ export default function EmployeeDashboard() {
           {/* Entrada Button */}
           <Button
             onClick={handleClockIn}
-            disabled={!isAtRestaurant || isClockedIn || loading || isLate || !isWorkDay}
+            disabled={!isAtRestaurant || isClockedIn || loading || !isWorkDay}
             className="btn-primary h-24 text-lg font-semibold flex flex-col items-center justify-center gap-2"
           >
             <Clock className="w-6 h-6" />
