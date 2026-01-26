@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 type AdminAuth = {
   username: string;
@@ -31,9 +31,63 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [adminAuth, setAdminAuth] = useState<AdminAuth | null>(null);
-  const [employeeAuth, setEmployeeAuth] = useState<EmployeeAuth | null>(null);
-  const [lastLocation, setLastLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [adminAuth, setAdminAuth] = useState<AdminAuth | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem("timeclock.adminAuth");
+      return raw ? (JSON.parse(raw) as AdminAuth) : null;
+    } catch (error) {
+      console.warn("No se pudo leer adminAuth guardado", error);
+      return null;
+    }
+  });
+  const [employeeAuth, setEmployeeAuth] = useState<EmployeeAuth | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem("timeclock.employeeAuth");
+      return raw ? (JSON.parse(raw) as EmployeeAuth) : null;
+    } catch (error) {
+      console.warn("No se pudo leer employeeAuth guardado", error);
+      return null;
+    }
+  });
+  const [lastLocation, setLastLocation] = useState<{ lat: number; lng: number } | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem("timeclock.lastLocation");
+      return raw ? (JSON.parse(raw) as { lat: number; lng: number }) : null;
+    } catch (error) {
+      console.warn("No se pudo leer lastLocation guardado", error);
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (adminAuth) {
+      window.localStorage.setItem("timeclock.adminAuth", JSON.stringify(adminAuth));
+    } else {
+      window.localStorage.removeItem("timeclock.adminAuth");
+    }
+  }, [adminAuth]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (employeeAuth) {
+      window.localStorage.setItem("timeclock.employeeAuth", JSON.stringify(employeeAuth));
+    } else {
+      window.localStorage.removeItem("timeclock.employeeAuth");
+    }
+  }, [employeeAuth]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (lastLocation) {
+      window.localStorage.setItem("timeclock.lastLocation", JSON.stringify(lastLocation));
+    } else {
+      window.localStorage.removeItem("timeclock.lastLocation");
+    }
+  }, [lastLocation]);
 
   const value = useMemo(
     () => ({
