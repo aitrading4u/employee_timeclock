@@ -172,14 +172,8 @@ export default function EmployeeDashboard() {
 
   useEffect(() => {
     const timeclocks = employeeTimeclocks.data || [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayRecord = timeclocks.find((entry) => {
-      const entryDate = new Date(entry.createdAt);
-      entryDate.setHours(0, 0, 0, 0);
-      return entryDate.getTime() === today.getTime() && entry.entryTime && !entry.exitTime;
-    });
-    setIsClockedIn(Boolean(todayRecord));
+    const openRecord = timeclocks.find((entry) => entry.entryTime && !entry.exitTime);
+    setIsClockedIn(Boolean(openRecord));
     const todayExit = timeclocks
       .filter((entry) => {
         const entryDate = new Date(entry.createdAt);
@@ -412,7 +406,7 @@ export default function EmployeeDashboard() {
           {/* Entrada Button */}
           <Button
             onClick={handleClockIn}
-            disabled={!isAtRestaurant || isClockedIn || loading || !isWorkDay}
+            disabled={!isAtRestaurant || isClockedIn || loading}
             className="btn-primary h-24 text-lg font-semibold flex flex-col items-center justify-center gap-2"
           >
             <Clock className="w-6 h-6" />
@@ -423,7 +417,7 @@ export default function EmployeeDashboard() {
           {/* Salida Button */}
           <Button
             onClick={handleClockOut}
-            disabled={!isAtRestaurant || !isClockedIn || loading || !isWorkDay}
+            disabled={!isAtRestaurant || !isClockedIn || loading}
             className="btn-secondary h-24 text-lg font-semibold flex flex-col items-center justify-center gap-2"
           >
             <Clock className="w-6 h-6" />

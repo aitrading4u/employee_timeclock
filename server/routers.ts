@@ -639,16 +639,12 @@ export const appRouter = router({
       if (distance > restaurant.radiusMeters) {
         throw new Error("You are not at the restaurant location");
       }
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
       const todayTimeclocks = await getTimeclocksByEmployee(input.employeeId);
-      const openRecord = todayTimeclocks.find(tc => {
-        const tcDate = new Date(tc.createdAt);
-        tcDate.setHours(0, 0, 0, 0);
-        return tcDate.getTime() === today.getTime() && tc.entryTime && !tc.exitTime;
-      });
+      const openRecord = todayTimeclocks.find(tc => tc.entryTime && !tc.exitTime);
       if (openRecord) throw new Error("You must clock out before clocking in again");
       const now = new Date();
+      let isLate = false;
+      const graceMinutes = employee.lateGraceMinutes ?? 5;
       const dayOfWeek = now.getDay();
       const completedShifts = todayTimeclocks.filter(tc => tc.exitTime).length;
       const schedule =
@@ -657,8 +653,6 @@ export const appRouter = router({
           : completedShifts === 1
           ? await getScheduleByEmployeeDayAndSlot(input.employeeId, dayOfWeek, 2)
           : undefined;
-      let isLate = false;
-      const graceMinutes = employee.lateGraceMinutes ?? 5;
       if (schedule && schedule.isWorkDay && schedule.entryTime !== "00:00") {
         const parsed = parseScheduleTime(schedule.entryTime);
         if (parsed) {
@@ -710,19 +704,15 @@ export const appRouter = router({
       if (distance > restaurant.radiusMeters) {
         throw new Error("You are not at the restaurant location");
       }
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
       const todayTimeclocks = await getTimeclocksByEmployee(input.employeeId);
-      const todayRecord = todayTimeclocks.find(tc => {
-        const tcDate = new Date(tc.createdAt);
-        tcDate.setHours(0, 0, 0, 0);
-        return tcDate.getTime() === today.getTime() && tc.entryTime && !tc.exitTime;
-      });
-      if (!todayRecord) throw new Error("No active timeclock entry found");
+      const openRecord = todayTimeclocks
+        .filter(tc => tc.entryTime && !tc.exitTime)
+        .sort((a, b) => new Date(b.entryTime || 0).getTime() - new Date(a.entryTime || 0).getTime())[0];
+      if (!openRecord) throw new Error("No active timeclock entry found");
       const now = new Date();
       await db.update(timeclocks).set({
         exitTime: now,
-      }).where(eq(timeclocks.id, todayRecord.id));
+      }).where(eq(timeclocks.id, openRecord.id));
       return { success: true };
     }),
 
