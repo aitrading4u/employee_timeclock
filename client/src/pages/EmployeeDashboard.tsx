@@ -174,6 +174,8 @@ export default function EmployeeDashboard() {
     const timeclocks = employeeTimeclocks.data || [];
     const openRecord = timeclocks.find((entry) => entry.entryTime && !entry.exitTime);
     setIsClockedIn(Boolean(openRecord));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const todayExit = timeclocks
       .filter((entry) => {
         const entryDate = new Date(entry.createdAt);
