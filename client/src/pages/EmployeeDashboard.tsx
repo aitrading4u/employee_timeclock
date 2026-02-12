@@ -437,26 +437,17 @@ export default function EmployeeDashboard() {
 
         {/* Quick Links */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card className="p-6 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setLocation('/employee/calendar')}>
+          <Card
+            className="p-6 hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => setLocation('/employee/calendar')}
+          >
             <div className="flex items-center gap-4">
               <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
                 <Calendar className="w-6 h-6 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
-                <h3 className="font-semibold text-foreground">Calendario</h3>
+                <h3 className="font-semibold text-foreground">Calendario y Calculadora</h3>
                 <p className="text-sm text-muted-foreground">Ver mis horas</p>
-              </div>
-            </div>
-          </Card>
-
-        <Card className="p-6 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setLocation('/employee/calendar')}>
-            <div className="flex items-center gap-4">
-              <div className="inline-flex items-center justify-center w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                <Calculator className="w-6 h-6 text-green-600 dark:text-green-400" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-foreground">Calculadora</h3>
-              <p className="text-sm text-muted-foreground">Sueldo estimado</p>
               </div>
             </div>
           </Card>
