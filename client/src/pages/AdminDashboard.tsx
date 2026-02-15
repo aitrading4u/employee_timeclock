@@ -169,6 +169,7 @@ export default function AdminDashboard() {
   const updateTimeclock = trpc.publicApi.updateTimeclock.useMutation();
   const sendTestNotification = trpc.publicApi.sendTestNotification.useMutation();
   const clearAllTimeclocks = trpc.publicApi.clearAllTimeclocks.useMutation();
+  const clearAllIncidents = trpc.publicApi.clearAllIncidents.useMutation();
 
   const filteredTimeclocks = (timeclocksQuery.data || [])
     .filter((entry) =>
@@ -376,6 +377,27 @@ export default function AdminDashboard() {
       })
       .catch((error) => {
         toast.error('No se pudieron borrar las horas');
+        console.error(error);
+      });
+  };
+
+  const handleClearAllIncidents = () => {
+    const confirmed = window.confirm(
+      'Esto borrará TODAS las incidencias de tus empleados. ¿Quieres continuar?'
+    );
+    if (!confirmed) return;
+
+    clearAllIncidents
+      .mutateAsync({
+        username: adminUsername,
+        password: adminPassword,
+      })
+      .then(() => {
+        toast.success('Todas las incidencias se han borrado');
+        listIncidents.refetch();
+      })
+      .catch((error) => {
+        toast.error('No se pudieron borrar las incidencias');
         console.error(error);
       });
   };
@@ -1260,6 +1282,16 @@ export default function AdminDashboard() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={handleClearAllIncidents}
+                    disabled={clearAllIncidents.isPending}
+                  >
+                    {clearAllIncidents.isPending ? "Borrando..." : "Borrar todas las incidencias"}
+                  </Button>
                 </div>
               </div>
 
