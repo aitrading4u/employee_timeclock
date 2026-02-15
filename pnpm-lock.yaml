@@ -269,6 +269,9 @@ importers:
       prettier:
         specifier: ^3.6.2
         version: 3.6.2
+      resolve-pkg-maps:
+        specifier: ^1.0.0
+        version: 1.0.0
       tailwindcss:
         specifier: ^4.1.14
         version: 4.1.14
