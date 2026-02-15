@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LogOut, MapPin, Users, Calendar, AlertCircle, Clock3 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -1181,52 +1182,58 @@ export default function AdminDashboard() {
                   <p className="text-sm text-muted-foreground">No hay fichajes en este rango.</p>
                 )}
               </div>
-              <div className="mt-6 border border-border rounded-lg p-4 space-y-3">
-                <h3 className="text-sm font-semibold text-foreground">
-                  Historial de notificaciones
-                </h3>
-                {notificationLogsQuery.data?.length ? (
-                  <div className="space-y-2">
-                    {notificationLogsQuery.data.map((log) => {
-                      const label =
-                        log.entrySlot === 0
-                          ? "Recordatorio salida"
-                          : log.entrySlot === 2
-                          ? "Entrada programada (2)"
-                          : "Entrada programada (1)";
-                      return (
-                        <div
-                          key={`${log.employeeId}-${log.notifiedAt}`}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2"
-                        >
-                          <div>
-                            <p className="text-sm text-foreground">
-                              {employeeNameById.get(log.employeeId) || `Empleado #${log.employeeId}`}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {label} · {log.entryTime} ·{" "}
-                              {log.scheduleDate
-                                ? new Date(log.scheduleDate).toLocaleDateString("es-ES")
-                                : ""}
-                            </p>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {log.notifiedAt
-                              ? new Date(log.notifiedAt).toLocaleString("es-ES", {
-                                  dateStyle: "short",
-                                  timeStyle: "short",
-                                })
-                              : ""}
-                          </span>
+              <div className="mt-6 border border-border rounded-lg p-4">
+                <Accordion type="single" collapsible defaultValue="notifications-history">
+                  <AccordionItem value="notifications-history">
+                    <AccordionTrigger className="text-sm font-semibold text-foreground">
+                      Historial de notificaciones
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2">
+                      {notificationLogsQuery.data?.length ? (
+                        <div className="space-y-2">
+                          {notificationLogsQuery.data.map((log) => {
+                            const label =
+                              log.entrySlot === 0
+                                ? "Recordatorio salida"
+                                : log.entrySlot === 2
+                                ? "Entrada programada (2)"
+                                : "Entrada programada (1)";
+                            return (
+                              <div
+                                key={`${log.employeeId}-${log.notifiedAt}`}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2"
+                              >
+                                <div>
+                                  <p className="text-sm text-foreground">
+                                    {employeeNameById.get(log.employeeId) || `Empleado #${log.employeeId}`}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {label} · {log.entryTime} ·{" "}
+                                    {log.scheduleDate
+                                      ? new Date(log.scheduleDate).toLocaleDateString("es-ES")
+                                      : ""}
+                                  </p>
+                                </div>
+                                <span className="text-xs text-muted-foreground">
+                                  {log.notifiedAt
+                                    ? new Date(log.notifiedAt).toLocaleString("es-ES", {
+                                        dateStyle: "short",
+                                        timeStyle: "short",
+                                      })
+                                    : ""}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No hay notificaciones registradas.
-                  </p>
-                )}
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          No hay notificaciones registradas.
+                        </p>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               </div>
               <div className="mt-6 border border-border rounded-lg p-4 space-y-4">
                 <h3 className="text-sm font-semibold text-foreground">
