@@ -367,6 +367,9 @@ export default function AdminDashboard() {
       .mutateAsync({
         username: adminUsername,
         password: adminPassword,
+        employeeId: selectedEmployeeId ? Number(selectedEmployeeId) : undefined,
+        rangeStart: rangeStart || undefined,
+        rangeEnd: rangeEnd || undefined,
       })
       .then(async (result) => {
         const refetchResult = await timeclocksQuery.refetch();

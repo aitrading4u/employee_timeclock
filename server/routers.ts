@@ -443,6 +443,9 @@ export const appRouter = router({
       z.object({
         username: z.string().min(1),
         password: z.string().min(1),
+        employeeId: z.number().optional(),
+        rangeStart: z.string().optional(),
+        rangeEnd: z.string().optional(),
       })
     ).mutation(async ({ input }) => {
       const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
@@ -455,16 +458,39 @@ export const appRouter = router({
       const restaurant = await getRestaurantByAdmin(admin.id);
       if (!restaurant) throw new Error("Restaurant not found");
       const restaurantEmployees = await getEmployeesByRestaurant(restaurant.id);
-      const employeeIds = restaurantEmployees.map((employee) => employee.id);
+      let employeeIds = restaurantEmployees.map((employee) => employee.id);
+      if (input.employeeId) {
+        employeeIds = employeeIds.filter((id) => id === input.employeeId);
+      }
       if (employeeIds.length === 0) return { success: true };
 
       const db = await getDb();
       if (!db) throw new Error("Database not available");
       const targetTimeclocks = await db
-        .select({ id: timeclocks.id })
+        .select({
+          id: timeclocks.id,
+          entryTime: timeclocks.entryTime,
+          createdAt: timeclocks.createdAt,
+        })
         .from(timeclocks)
         .where(inArray(timeclocks.employeeId, employeeIds));
-      const timeclockIds = targetTimeclocks.map((item) => item.id);
+
+      const timeclockIds = targetTimeclocks
+        .filter((item) => {
+          const entryDate = new Date(item.entryTime || item.createdAt);
+          if (input.rangeStart) {
+            const start = new Date(input.rangeStart);
+            start.setHours(0, 0, 0, 0);
+            if (entryDate < start) return false;
+          }
+          if (input.rangeEnd) {
+            const end = new Date(input.rangeEnd);
+            end.setHours(23, 59, 59, 999);
+            if (entryDate > end) return false;
+          }
+          return true;
+        })
+        .map((item) => item.id);
       if (timeclockIds.length === 0) return { success: true, deleted: 0 };
 
       await db.delete(timeclocks).where(inArray(timeclocks.id, timeclockIds));
