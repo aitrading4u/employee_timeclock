@@ -23,9 +23,9 @@ type DaySchedule = {
 };
 
 function getShiftLabel(daySchedule?: DaySchedule): string {
-  if (!daySchedule || !daySchedule.isActive) return "Libre";
+  if (!daySchedule || !daySchedule.isActive) return "Sin turno";
   if (daySchedule.entry1 && daySchedule.entry2) return "Turno Partido";
-  if (!daySchedule.entry1) return "Libre";
+  if (!daySchedule.entry1) return "Sin turno";
 
   const hour = Number(daySchedule.entry1.split(":")[0] || "0");
   return hour >= 14 ? "Tarde" : "Mañana";
@@ -87,10 +87,6 @@ export default function EmployeeSchedule() {
               <div key={day.key} className="border border-border rounded-lg p-4 bg-card">
                 <p className="font-semibold text-foreground">{day.label}</p>
                 <p className="text-sm mt-2 text-foreground">{getShiftLabel(day.value)}</p>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  <p>Entrada 1: {day.value.entry1 || "--:--"}</p>
-                  <p>Entrada 2: {day.value.entry2 || "--:--"}</p>
-                </div>
               </div>
             ))}
           </div>

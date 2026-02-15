@@ -227,15 +227,8 @@ export default function AdminDashboard() {
 
   const handleShiftTypeChange = (
     day: keyof typeof shiftSchedule,
-    shiftType: 'split' | 'morning' | 'afternoon' | 'off'
+    shiftType: 'split' | 'morning' | 'afternoon'
   ) => {
-    if (shiftType === 'off') {
-      setShiftSchedule(prev => ({
-        ...prev,
-        [day]: { entry1: '', entry2: '', isActive: false },
-      }));
-      return;
-    }
     if (shiftType === 'split') {
       setShiftSchedule(prev => ({
         ...prev,
@@ -256,27 +249,12 @@ export default function AdminDashboard() {
     }));
   };
 
-  const getShiftType = (day: keyof typeof shiftSchedule): 'split' | 'morning' | 'afternoon' | 'off' => {
+  const getShiftType = (day: keyof typeof shiftSchedule): 'split' | 'morning' | 'afternoon' => {
     const value = shiftSchedule[day];
-    if (!value.isActive || (!value.entry1 && !value.entry2)) return 'off';
+    if (!value.isActive || (!value.entry1 && !value.entry2)) return 'morning';
     if (value.entry1 && value.entry2) return 'split';
     const hour = Number((value.entry1 || '0').split(':')[0]);
     return hour >= 14 ? 'afternoon' : 'morning';
-  };
-
-  const handleShiftTimeChange = (
-    day: keyof typeof shiftSchedule,
-    field: 'entry1' | 'entry2',
-    value: string
-  ) => {
-    setShiftSchedule(prev => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        isActive: true,
-        [field]: value,
-      },
-    }));
   };
 
   const handleSaveEmployeeShifts = () => {
@@ -891,37 +869,14 @@ export default function AdminDashboard() {
                         onChange={(event) =>
                           handleShiftTypeChange(
                             day.key,
-                            event.target.value as 'split' | 'morning' | 'afternoon' | 'off'
+                            event.target.value as 'split' | 'morning' | 'afternoon'
                           )
                         }
                       >
-                        <option value="off">Libre</option>
                         <option value="morning">Mañana</option>
                         <option value="afternoon">Tarde</option>
                         <option value="split">Turno Partido</option>
                       </select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs text-muted-foreground mb-1">Entrada 1</label>
-                        <input
-                          type="time"
-                          className="input-elegant"
-                          value={shiftSchedule[day.key].entry1}
-                          onChange={(event) => handleShiftTimeChange(day.key, 'entry1', event.target.value)}
-                          disabled={!shiftSchedule[day.key].isActive}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-muted-foreground mb-1">Entrada 2</label>
-                        <input
-                          type="time"
-                          className="input-elegant"
-                          value={shiftSchedule[day.key].entry2}
-                          onChange={(event) => handleShiftTimeChange(day.key, 'entry2', event.target.value)}
-                          disabled={!shiftSchedule[day.key].isActive}
-                        />
-                      </div>
                     </div>
                   </div>
                 ))}
