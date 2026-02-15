@@ -460,9 +460,16 @@ export const appRouter = router({
 
       const db = await getDb();
       if (!db) throw new Error("Database not available");
-      await db.delete(timeclocks).where(inArray(timeclocks.employeeId, employeeIds));
+      const targetTimeclocks = await db
+        .select({ id: timeclocks.id })
+        .from(timeclocks)
+        .where(inArray(timeclocks.employeeId, employeeIds));
+      const timeclockIds = targetTimeclocks.map((item) => item.id);
+      if (timeclockIds.length === 0) return { success: true, deleted: 0 };
 
-      return { success: true };
+      await db.delete(timeclocks).where(inArray(timeclocks.id, timeclockIds));
+
+      return { success: true, deleted: timeclockIds.length };
     }),
 
     listNotificationLogs: publicProcedure.input(

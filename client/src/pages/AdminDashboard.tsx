@@ -368,12 +368,22 @@ export default function AdminDashboard() {
         username: adminUsername,
         password: adminPassword,
       })
-      .then(() => {
-        toast.success('Todas las horas guardadas se han borrado');
+      .then(async (result) => {
+        const refetchResult = await timeclocksQuery.refetch();
+        if (refetchResult.error) {
+          throw refetchResult.error;
+        }
+        const deleted = typeof result?.deleted === 'number' ? result.deleted : null;
+        if (deleted === 0) {
+          toast.info('No había horas para borrar');
+        } else {
+          toast.success(
+            deleted ? `Se borraron ${deleted} registros de horas` : 'Todas las horas guardadas se han borrado'
+          );
+        }
         setEditingTimeclockId(null);
         setEditingEntryTime('');
         setEditingExitTime('');
-        timeclocksQuery.refetch();
       })
       .catch((error) => {
         toast.error('No se pudieron borrar las horas');

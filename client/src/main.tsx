@@ -69,9 +69,17 @@ if ("serviceWorker" in navigator) {
       .register("/sw.js")
       .then(registration => {
         let refreshing = false;
+        let updateNotified = false;
+
+        const notifyUpdateAvailable = () => {
+          if (updateNotified) return;
+          updateNotified = true;
+          window.dispatchEvent(new CustomEvent("timeclock-update-available"));
+        };
 
         const activateUpdate = () => {
           if (registration.waiting) {
+            notifyUpdateAvailable();
             registration.waiting.postMessage({ type: "SKIP_WAITING" });
           }
         };
@@ -85,6 +93,7 @@ if ("serviceWorker" in navigator) {
           newWorker.addEventListener("statechange", () => {
             // A new service worker is installed and ready to take control.
             if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+              notifyUpdateAvailable();
               activateUpdate();
             }
           });
