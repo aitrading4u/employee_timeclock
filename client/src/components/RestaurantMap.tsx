@@ -10,6 +10,54 @@ interface RestaurantMapProps {
   onAddressChange?: (address: string) => void;
 }
 
+declare global {
+  interface Window {
+    google?: typeof google;
+  }
+}
+
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+const GOOGLE_SCRIPT_SELECTOR = 'script[data-timeclock-google-maps="true"]';
+
+function waitForGoogleMaps(timeoutMs = 15000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const interval = window.setInterval(() => {
+      if (window.google?.maps) {
+        window.clearInterval(interval);
+        resolve(true);
+        return;
+      }
+      if (Date.now() - started > timeoutMs) {
+        window.clearInterval(interval);
+        resolve(false);
+      }
+    }, 100);
+  });
+}
+
+async function ensureGoogleMapsLoaded(): Promise<boolean> {
+  if (window.google?.maps) return true;
+
+  const existingScript = document.querySelector<HTMLScriptElement>(GOOGLE_SCRIPT_SELECTOR);
+  if (existingScript) {
+    return await waitForGoogleMaps();
+  }
+
+  if (!GOOGLE_MAPS_API_KEY) {
+    return false;
+  }
+
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
+  script.async = true;
+  script.defer = true;
+  script.setAttribute('data-timeclock-google-maps', 'true');
+  document.head.appendChild(script);
+
+  return await waitForGoogleMaps();
+}
+
 export default function RestaurantMap({
   latitude,
   longitude,
@@ -24,77 +72,99 @@ export default function RestaurantMap({
   const [loading, setLoading] = useState(false);
   const [locationName, setLocationName] = useState('');
   const [searchValue, setSearchValue] = useState('');
+  const [mapsReady, setMapsReady] = useState(false);
+  const [mapsLoadError, setMapsLoadError] = useState<string | null>(null);
 
   // Initialize map
   useEffect(() => {
-    if (!mapContainer.current) return;
+    let cancelled = false;
 
-    const mapOptions: google.maps.MapOptions = {
-      center: { lat: latitude || 40.7128, lng: longitude || -74.006 },
-      zoom: 15,
-      mapTypeControl: true,
-      fullscreenControl: true,
-      streetViewControl: true,
+    const initMap = async () => {
+      if (!mapContainer.current) return;
+
+      const loaded = await ensureGoogleMapsLoaded();
+      if (cancelled) return;
+      if (!loaded || !window.google?.maps) {
+        setMapsLoadError(
+          'No se pudo cargar Google Maps. Revisa la API key y las restricciones del dominio.'
+        );
+        return;
+      }
+
+      setMapsReady(true);
+      setMapsLoadError(null);
+
+      const mapOptions: google.maps.MapOptions = {
+        center: { lat: latitude || 40.7128, lng: longitude || -74.006 },
+        zoom: 15,
+        mapTypeControl: true,
+        fullscreenControl: true,
+        streetViewControl: true,
+      };
+
+      map.current = new window.google.maps.Map(mapContainer.current, mapOptions);
+
+      // Add click listener to map
+      map.current.addListener('click', (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) {
+          const lat = e.latLng.lat();
+          const lng = e.latLng.lng();
+          updateMarker(lat, lng);
+          onLocationSelect(lat, lng);
+        }
+      });
+
+      // Add initial marker if coordinates exist
+      if (latitude && longitude) {
+        updateMarker(latitude, longitude);
+      }
+
+      if (searchInputRef.current) {
+        autocomplete.current = new window.google.maps.places.Autocomplete(searchInputRef.current, {
+          fields: ['geometry', 'formatted_address'],
+        });
+
+        autocomplete.current.addListener('place_changed', () => {
+          const place = autocomplete.current?.getPlace();
+          const location = place?.geometry?.location;
+          if (!location) {
+            toast.error('No se pudo encontrar la ubicación');
+            return;
+          }
+          const lat = location.lat();
+          const lng = location.lng();
+          updateMarker(lat, lng);
+          onLocationSelect(lat, lng);
+          const address = place?.formatted_address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+          setLocationName(address);
+          setSearchValue(address);
+          if (onAddressChange) {
+            onAddressChange(address);
+          }
+        });
+      }
     };
 
-    map.current = new google.maps.Map(mapContainer.current, mapOptions);
-
-    // Add click listener to map
-    map.current.addListener('click', (e: google.maps.MapMouseEvent) => {
-      if (e.latLng) {
-        const lat = e.latLng.lat();
-        const lng = e.latLng.lng();
-        updateMarker(lat, lng);
-        onLocationSelect(lat, lng);
-      }
-    });
-
-    // Add initial marker if coordinates exist
-    if (latitude && longitude) {
-      updateMarker(latitude, longitude);
-    }
-
-    if (searchInputRef.current) {
-      autocomplete.current = new google.maps.places.Autocomplete(searchInputRef.current, {
-        fields: ['geometry', 'formatted_address'],
-      });
-
-      autocomplete.current.addListener('place_changed', () => {
-        const place = autocomplete.current?.getPlace();
-        const location = place?.geometry?.location;
-        if (!location) {
-          toast.error('No se pudo encontrar la ubicación');
-          return;
-        }
-        const lat = location.lat();
-        const lng = location.lng();
-        updateMarker(lat, lng);
-        onLocationSelect(lat, lng);
-        const address = place?.formatted_address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        setLocationName(address);
-        setSearchValue(address);
-        if (onAddressChange) {
-          onAddressChange(address);
-        }
-      });
-    }
+    initMap();
 
     return () => {
-      // Cleanup
+      cancelled = true;
     };
   }, []);
 
   const updateMarker = (lat: number, lng: number) => {
+    if (!window.google?.maps || !map.current) return;
+
     if (marker.current) {
       marker.current.setMap(null);
     }
 
-    marker.current = new google.maps.Marker({
+    marker.current = new window.google.maps.Marker({
       position: { lat, lng },
       map: map.current,
       title: 'Ubicación del Restaurante',
       icon: {
-        path: google.maps.SymbolPath.CIRCLE,
+        path: window.google.maps.SymbolPath.CIRCLE,
         scale: 8,
         fillColor: '#3b82f6',
         fillOpacity: 1,
@@ -114,7 +184,14 @@ export default function RestaurantMap({
   const getAddressFromCoordinates = async (lat: number, lng: number) => {
     const fallbackAddress = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     try {
-      const geocoder = new google.maps.Geocoder();
+      if (!window.google?.maps) {
+        setLocationName(fallbackAddress);
+        if (onAddressChange) {
+          onAddressChange(fallbackAddress);
+        }
+        return;
+      }
+      const geocoder = new window.google.maps.Geocoder();
       const result = await geocoder.geocode({ location: { lat, lng } });
 
       if (result.results && result.results[0]) {
@@ -177,12 +254,19 @@ export default function RestaurantMap({
           onChange={(event) => setSearchValue(event.target.value)}
           placeholder="Escribe una dirección o selecciona en el mapa"
           className="input-elegant"
+          disabled={!mapsReady}
         />
       </div>
-      <div
-        ref={mapContainer}
-        className="w-full h-96 rounded-lg border border-border shadow-md"
-      />
+      {mapsLoadError ? (
+        <div className="w-full h-96 rounded-lg border border-border shadow-md p-4 flex items-center justify-center text-center text-sm text-red-600 dark:text-red-400 bg-card">
+          {mapsLoadError}
+        </div>
+      ) : (
+        <div
+          ref={mapContainer}
+          className="w-full h-96 rounded-lg border border-border shadow-md"
+        />
+      )}
 
       {/* Location Info */}
       {locationName && (
@@ -199,7 +283,7 @@ export default function RestaurantMap({
       {/* Use My Location Button */}
       <Button
         onClick={handleUseMyLocation}
-        disabled={loading}
+        disabled={loading || !mapsReady}
         className="w-full flex items-center justify-center gap-2"
         variant="outline"
       >
