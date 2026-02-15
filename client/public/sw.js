@@ -1,4 +1,4 @@
-const CACHE_NAME = "timeclock-v1";
+const CACHE_NAME = "timeclock-v2";
 const PRECACHE_URLS = ["/", "/index.html", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", event => {
@@ -21,22 +21,59 @@ self.addEventListener("activate", event => {
   );
 });
 
+self.addEventListener("message", event => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
-  event.respondWith(
-    caches.match(event.request).then(cachedResponse => {
-      if (cachedResponse) return cachedResponse;
-      return fetch(event.request)
+  const url = new URL(event.request.url);
+
+  // Never cache API calls.
+  if (url.origin === self.location.origin && url.pathname.startsWith("/api/")) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Navigation requests: network-first so new deploys are picked up immediately.
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
         .then(response => {
           const responseClone = response.clone();
-          if (event.request.url.startsWith(self.location.origin)) {
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
-          }
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
           return response;
         })
-        .catch(() => cachedResponse);
-    })
-  );
+        .catch(() =>
+          caches.match(event.request).then(cached => cached || caches.match("/index.html"))
+        )
+    );
+    return;
+  }
+
+  // Static assets: stale-while-revalidate.
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      caches.match(event.request).then(cachedResponse => {
+        const fetchPromise = fetch(event.request)
+          .then(response => {
+            if (response && response.status === 200) {
+              const responseClone = response.clone();
+              caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
+            }
+            return response;
+          })
+          .catch(() => cachedResponse);
+
+        return cachedResponse || fetchPromise;
+      })
+    );
+    return;
+  }
+
+  event.respondWith(fetch(event.request));
 });
 
 // Push notification event listener

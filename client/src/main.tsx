@@ -65,8 +65,46 @@ createRoot(document.getElementById("root")!).render(
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(error => {
-      console.warn("[PWA] Service worker registration failed:", error);
-    });
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then(registration => {
+        let refreshing = false;
+
+        const activateUpdate = () => {
+          if (registration.waiting) {
+            registration.waiting.postMessage({ type: "SKIP_WAITING" });
+          }
+        };
+
+        // If there is already an update waiting, activate it now.
+        activateUpdate();
+
+        registration.addEventListener("updatefound", () => {
+          const newWorker = registration.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener("statechange", () => {
+            // A new service worker is installed and ready to take control.
+            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+              activateUpdate();
+            }
+          });
+        });
+
+        // Check for updates periodically so deployed changes arrive automatically.
+        setInterval(() => {
+          registration.update().catch(() => {
+            // ignore background update errors
+          });
+        }, 60 * 1000);
+
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (refreshing) return;
+          refreshing = true;
+          window.location.reload();
+        });
+      })
+      .catch(error => {
+        console.warn("[PWA] Service worker registration failed:", error);
+      });
   });
 }

@@ -23,9 +23,9 @@ type DaySchedule = {
 };
 
 function getShiftLabel(daySchedule?: DaySchedule): string {
-  if (!daySchedule || !daySchedule.isActive) return "Sin turno";
+  if (!daySchedule || !daySchedule.isActive) return "Día libre";
   if (daySchedule.entry1 && daySchedule.entry2) return "Turno Partido";
-  if (!daySchedule.entry1) return "Sin turno";
+  if (!daySchedule.entry1) return "Día libre";
 
   const hour = Number(daySchedule.entry1.split(":")[0] || "0");
   return hour >= 14 ? "Tarde" : "Mañana";

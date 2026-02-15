@@ -168,6 +168,7 @@ export default function AdminDashboard() {
   );
   const updateTimeclock = trpc.publicApi.updateTimeclock.useMutation();
   const sendTestNotification = trpc.publicApi.sendTestNotification.useMutation();
+  const clearAllTimeclocks = trpc.publicApi.clearAllTimeclocks.useMutation();
 
   const filteredTimeclocks = (timeclocksQuery.data || [])
     .filter((entry) =>
@@ -227,8 +228,15 @@ export default function AdminDashboard() {
 
   const handleShiftTypeChange = (
     day: keyof typeof shiftSchedule,
-    shiftType: 'split' | 'morning' | 'afternoon'
+    shiftType: 'split' | 'morning' | 'afternoon' | 'off'
   ) => {
+    if (shiftType === 'off') {
+      setShiftSchedule(prev => ({
+        ...prev,
+        [day]: { entry1: '', entry2: '', isActive: false },
+      }));
+      return;
+    }
     if (shiftType === 'split') {
       setShiftSchedule(prev => ({
         ...prev,
@@ -249,9 +257,9 @@ export default function AdminDashboard() {
     }));
   };
 
-  const getShiftType = (day: keyof typeof shiftSchedule): 'split' | 'morning' | 'afternoon' => {
+  const getShiftType = (day: keyof typeof shiftSchedule): 'split' | 'morning' | 'afternoon' | 'off' => {
     const value = shiftSchedule[day];
-    if (!value.isActive || (!value.entry1 && !value.entry2)) return 'morning';
+    if (!value.isActive || (!value.entry1 && !value.entry2)) return 'off';
     if (value.entry1 && value.entry2) return 'split';
     const hour = Number((value.entry1 || '0').split(':')[0]);
     return hour >= 14 ? 'afternoon' : 'morning';
@@ -344,6 +352,30 @@ export default function AdminDashboard() {
       })
       .catch((error) => {
         toast.error(error?.message || 'No se pudo enviar la notificación');
+        console.error(error);
+      });
+  };
+
+  const handleClearAllTimeclocks = () => {
+    const confirmed = window.confirm(
+      'Esto borrará TODOS los fichajes guardados de tus empleados. ¿Quieres continuar?'
+    );
+    if (!confirmed) return;
+
+    clearAllTimeclocks
+      .mutateAsync({
+        username: adminUsername,
+        password: adminPassword,
+      })
+      .then(() => {
+        toast.success('Todas las horas guardadas se han borrado');
+        setEditingTimeclockId(null);
+        setEditingEntryTime('');
+        setEditingExitTime('');
+        timeclocksQuery.refetch();
+      })
+      .catch((error) => {
+        toast.error('No se pudieron borrar las horas');
         console.error(error);
       });
   };
@@ -869,10 +901,11 @@ export default function AdminDashboard() {
                         onChange={(event) =>
                           handleShiftTypeChange(
                             day.key,
-                            event.target.value as 'split' | 'morning' | 'afternoon'
+                            event.target.value as 'split' | 'morning' | 'afternoon' | 'off'
                           )
                         }
                       >
+                        <option value="off">Día libre</option>
                         <option value="morning">Mañana</option>
                         <option value="afternoon">Tarde</option>
                         <option value="split">Turno Partido</option>
@@ -923,6 +956,14 @@ export default function AdminDashboard() {
                     disabled={!selectedEmployeeId || sendTestNotification.isPending}
                   >
                     {sendTestNotification.isPending ? "Enviando..." : "Enviar notificación de prueba"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={handleClearAllTimeclocks}
+                    disabled={clearAllTimeclocks.isPending}
+                  >
+                    {clearAllTimeclocks.isPending ? "Borrando..." : "Borrar todas las horas"}
                   </Button>
                 </div>
 
