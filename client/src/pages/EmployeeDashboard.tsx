@@ -21,6 +21,39 @@ const weekdayKeys = [
   "saturday",
 ] as const;
 
+function getCurrentLocationOnce(): Promise<{ lat: number; lng: number }> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocalización no disponible'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      (error) => {
+        reject(error);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      }
+    );
+  });
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String((error as { message?: string }).message || '').trim();
+    if (message) return message;
+  }
+  return fallback;
+}
+
 export default function EmployeeDashboard() {
   const clockInMutation = trpc.publicApi.clockIn.useMutation();
   const clockOutMutation = trpc.publicApi.clockOut.useMutation();
@@ -256,24 +289,30 @@ export default function EmployeeDashboard() {
 
   // Get user location
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCurrentLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          setLastLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        (error) => {
+    let cancelled = false;
+    let warningShown = false;
+
+    const refreshLocation = async () => {
+      try {
+        const coords = await getCurrentLocationOnce();
+        if (cancelled) return;
+        setCurrentLocation(coords);
+        setLastLocation(coords);
+      } catch (error) {
+        if (!warningShown) {
+          warningShown = true;
           toast.error('No se pudo obtener tu ubicación');
-          console.error(error);
         }
-      );
-    }
+        console.error(error);
+      }
+    };
+
+    refreshLocation();
+    const timer = setInterval(refreshLocation, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -296,48 +335,48 @@ export default function EmployeeDashboard() {
   }, [location, employeeRestaurantQuery.data]);
 
   const handleClockIn = async () => {
-    if (!location) {
-      toast.error('No se pudo obtener tu ubicación');
-      return;
-    }
-
     setLoading(true);
     try {
+      const latestLocation = await getCurrentLocationOnce();
+      setCurrentLocation(latestLocation);
+      setLastLocation(latestLocation);
+
       await clockInMutation.mutateAsync({
         username: employeeAuth?.username || "",
         password: employeeAuth?.password || "",
         employeeId: employeeAuth?.employeeId || 0,
-        latitude: location.lat,
-        longitude: location.lng,
+        latitude: latestLocation.lat,
+        longitude: latestLocation.lng,
       });
       setIsClockedIn(true);
+      employeeTimeclocks.refetch();
       toast.success('¡Entrada registrada!');
     } catch (error) {
-      toast.error('Error al registrar entrada');
+      toast.error(getErrorMessage(error, 'Error al registrar entrada'));
     } finally {
       setLoading(false);
     }
   };
 
   const handleClockOut = async () => {
-    if (!location) {
-      toast.error('No se pudo obtener tu ubicación');
-      return;
-    }
-
     setLoading(true);
     try {
+      const latestLocation = await getCurrentLocationOnce();
+      setCurrentLocation(latestLocation);
+      setLastLocation(latestLocation);
+
       await clockOutMutation.mutateAsync({
         username: employeeAuth?.username || "",
         password: employeeAuth?.password || "",
         employeeId: employeeAuth?.employeeId || 0,
-        latitude: location.lat,
-        longitude: location.lng,
+        latitude: latestLocation.lat,
+        longitude: latestLocation.lng,
       });
       setIsClockedIn(false);
+      employeeTimeclocks.refetch();
       toast.success('¡Salida registrada!');
     } catch (error) {
-      toast.error('Error al registrar salida');
+      toast.error(getErrorMessage(error, 'Error al registrar salida'));
     } finally {
       setLoading(false);
     }
