@@ -3,11 +3,21 @@ import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, MapPin, Users, Calendar, AlertCircle } from 'lucide-react';
+import { LogOut, MapPin, Users, Calendar, AlertCircle, Clock3 } from 'lucide-react';
 import { toast } from 'sonner';
 import RestaurantMap from '@/components/RestaurantMap';
 import { trpc } from '@/lib/trpc';
 import { useAuthContext } from '@/contexts/AuthContext';
+
+const createEmptySchedule = () => ({
+  monday: { entry1: '', entry2: '', isActive: true },
+  tuesday: { entry1: '', entry2: '', isActive: true },
+  wednesday: { entry1: '', entry2: '', isActive: true },
+  thursday: { entry1: '', entry2: '', isActive: true },
+  friday: { entry1: '', entry2: '', isActive: true },
+  saturday: { entry1: '', entry2: '', isActive: true },
+  sunday: { entry1: '', entry2: '', isActive: true },
+});
 
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
@@ -36,15 +46,9 @@ export default function AdminDashboard() {
   const [editingTimeclockId, setEditingTimeclockId] = useState<number | null>(null);
   const [editingEntryTime, setEditingEntryTime] = useState('');
   const [editingExitTime, setEditingExitTime] = useState('');
-  const [employeeSchedule, setEmployeeSchedule] = useState(() => ({
-    monday: { entry1: '', entry2: '', isActive: true },
-    tuesday: { entry1: '', entry2: '', isActive: true },
-    wednesday: { entry1: '', entry2: '', isActive: true },
-    thursday: { entry1: '', entry2: '', isActive: true },
-    friday: { entry1: '', entry2: '', isActive: true },
-    saturday: { entry1: '', entry2: '', isActive: true },
-    sunday: { entry1: '', entry2: '', isActive: true },
-  }));
+  const [employeeSchedule, setEmployeeSchedule] = useState(() => createEmptySchedule());
+  const [shiftEmployeeId, setShiftEmployeeId] = useState('');
+  const [shiftSchedule, setShiftSchedule] = useState(() => createEmptySchedule());
   const scheduleDays = [
     { key: 'monday', label: 'Lunes' },
     { key: 'tuesday', label: 'Martes' },
@@ -136,7 +140,16 @@ export default function AdminDashboard() {
     },
     { enabled: Boolean(adminUsername && adminPassword && editingEmployeeId) }
   );
+  const shiftScheduleQuery = trpc.publicApi.getEmployeeSchedule.useQuery(
+    {
+      username: adminUsername,
+      password: adminPassword,
+      employeeId: shiftEmployeeId ? Number(shiftEmployeeId) : 0,
+    },
+    { enabled: Boolean(adminUsername && adminPassword && shiftEmployeeId) }
+  );
   const updateEmployee = trpc.publicApi.updateEmployee.useMutation();
+  const updateEmployeeSchedule = trpc.publicApi.updateEmployeeSchedule.useMutation();
   const listIncidents = trpc.publicApi.listIncidents.useQuery(
     { username: adminUsername, password: adminPassword },
     { enabled: Boolean(adminUsername && adminPassword) }
@@ -212,7 +225,83 @@ export default function AdminDashboard() {
     }));
   };
 
-  const handleEditTimeclock = (entry: { id: number; entryTime?: string | null; exitTime?: string | null }) => {
+  const handleShiftTypeChange = (
+    day: keyof typeof shiftSchedule,
+    shiftType: 'split' | 'morning' | 'afternoon' | 'off'
+  ) => {
+    if (shiftType === 'off') {
+      setShiftSchedule(prev => ({
+        ...prev,
+        [day]: { entry1: '', entry2: '', isActive: false },
+      }));
+      return;
+    }
+    if (shiftType === 'split') {
+      setShiftSchedule(prev => ({
+        ...prev,
+        [day]: { entry1: '09:00', entry2: '16:00', isActive: true },
+      }));
+      return;
+    }
+    if (shiftType === 'morning') {
+      setShiftSchedule(prev => ({
+        ...prev,
+        [day]: { entry1: '09:00', entry2: '', isActive: true },
+      }));
+      return;
+    }
+    setShiftSchedule(prev => ({
+      ...prev,
+      [day]: { entry1: '16:00', entry2: '', isActive: true },
+    }));
+  };
+
+  const getShiftType = (day: keyof typeof shiftSchedule): 'split' | 'morning' | 'afternoon' | 'off' => {
+    const value = shiftSchedule[day];
+    if (!value.isActive || (!value.entry1 && !value.entry2)) return 'off';
+    if (value.entry1 && value.entry2) return 'split';
+    const hour = Number((value.entry1 || '0').split(':')[0]);
+    return hour >= 14 ? 'afternoon' : 'morning';
+  };
+
+  const handleShiftTimeChange = (
+    day: keyof typeof shiftSchedule,
+    field: 'entry1' | 'entry2',
+    value: string
+  ) => {
+    setShiftSchedule(prev => ({
+      ...prev,
+      [day]: {
+        ...prev[day],
+        isActive: true,
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleSaveEmployeeShifts = () => {
+    if (!shiftEmployeeId) {
+      toast.error('Selecciona un empleado');
+      return;
+    }
+    updateEmployeeSchedule
+      .mutateAsync({
+        username: adminUsername,
+        password: adminPassword,
+        employeeId: Number(shiftEmployeeId),
+        schedule: shiftSchedule,
+      })
+      .then(() => {
+        toast.success('Turnos guardados correctamente');
+        shiftScheduleQuery.refetch();
+      })
+      .catch((error) => {
+        toast.error('No se pudieron guardar los turnos');
+        console.error(error);
+      });
+  };
+
+  const handleEditTimeclock = (entry: { id: number; entryTime?: string | Date | null; exitTime?: string | Date | null }) => {
     setEditingTimeclockId(entry.id);
     setEditingEntryTime(formatDateTimeInput(entry.entryTime));
     setEditingExitTime(formatDateTimeInput(entry.exitTime));
@@ -360,15 +449,7 @@ export default function AdminDashboard() {
         setEmployeePhone('');
         setLateGraceMinutes('5');
         setEditingEmployeeId(null);
-        setEmployeeSchedule({
-          monday: { entry1: '', entry2: '', isActive: true },
-          tuesday: { entry1: '', entry2: '', isActive: true },
-          wednesday: { entry1: '', entry2: '', isActive: true },
-          thursday: { entry1: '', entry2: '', isActive: true },
-          friday: { entry1: '', entry2: '', isActive: true },
-          saturday: { entry1: '', entry2: '', isActive: true },
-          sunday: { entry1: '', entry2: '', isActive: true },
-        });
+        setEmployeeSchedule(createEmptySchedule());
         listEmployees.refetch();
       })
       .catch((error) => {
@@ -393,17 +474,22 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (employeeScheduleQuery.data) {
       setEmployeeSchedule({
-        monday: { entry1: '', entry2: '', isActive: true },
-        tuesday: { entry1: '', entry2: '', isActive: true },
-        wednesday: { entry1: '', entry2: '', isActive: true },
-        thursday: { entry1: '', entry2: '', isActive: true },
-        friday: { entry1: '', entry2: '', isActive: true },
-        saturday: { entry1: '', entry2: '', isActive: true },
-        sunday: { entry1: '', entry2: '', isActive: true },
+        ...createEmptySchedule(),
         ...employeeScheduleQuery.data,
       });
     }
   }, [employeeScheduleQuery.data]);
+
+  useEffect(() => {
+    if (shiftScheduleQuery.data) {
+      setShiftSchedule({
+        ...createEmptySchedule(),
+        ...shiftScheduleQuery.data,
+      });
+    } else {
+      setShiftSchedule(createEmptySchedule());
+    }
+  }, [shiftScheduleQuery.data]);
 
   useEffect(() => {
     if (getRestaurant.data) {
@@ -446,7 +532,7 @@ export default function AdminDashboard() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-8">
+          <TabsList className="grid w-full grid-cols-5 mb-8">
             <TabsTrigger value="restaurant" className="flex items-center gap-2">
               <MapPin className="w-4 h-4" />
               <span className="hidden sm:inline">Restaurante</span>
@@ -458,6 +544,10 @@ export default function AdminDashboard() {
             <TabsTrigger value="hours" className="flex items-center gap-2">
               <Calendar className="w-4 h-4" />
               <span className="hidden sm:inline">Horas</span>
+            </TabsTrigger>
+            <TabsTrigger value="shifts" className="flex items-center gap-2">
+              <Clock3 className="w-4 h-4" />
+              <span className="hidden sm:inline">Turnos</span>
             </TabsTrigger>
             <TabsTrigger value="incidents" className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />
@@ -762,6 +852,88 @@ export default function AdminDashboard() {
                   )}
                 </div>
               </div>
+            </Card>
+          </TabsContent>
+
+          {/* Shifts Tab */}
+          <TabsContent value="shifts" className="space-y-6">
+            <Card className="p-6">
+              <h2 className="text-2xl font-bold text-foreground mb-6">Configuración de Turnos</h2>
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Seleccionar Empleado
+                  </label>
+                  <select
+                    className="input-elegant"
+                    value={shiftEmployeeId}
+                    onChange={(event) => setShiftEmployeeId(event.target.value)}
+                  >
+                    <option value="">Selecciona un empleado</option>
+                    {listEmployees.data?.map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {scheduleDays.map((day) => (
+                  <div key={day.key} className="border border-border rounded-lg p-4 space-y-3">
+                    <p className="font-medium text-foreground">{day.label}</p>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Tipo de turno</label>
+                      <select
+                        className="input-elegant"
+                        value={getShiftType(day.key)}
+                        onChange={(event) =>
+                          handleShiftTypeChange(
+                            day.key,
+                            event.target.value as 'split' | 'morning' | 'afternoon' | 'off'
+                          )
+                        }
+                      >
+                        <option value="off">Libre</option>
+                        <option value="morning">Mañana</option>
+                        <option value="afternoon">Tarde</option>
+                        <option value="split">Turno Partido</option>
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Entrada 1</label>
+                        <input
+                          type="time"
+                          className="input-elegant"
+                          value={shiftSchedule[day.key].entry1}
+                          onChange={(event) => handleShiftTimeChange(day.key, 'entry1', event.target.value)}
+                          disabled={!shiftSchedule[day.key].isActive}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Entrada 2</label>
+                        <input
+                          type="time"
+                          className="input-elegant"
+                          value={shiftSchedule[day.key].entry2}
+                          onChange={(event) => handleShiftTimeChange(day.key, 'entry2', event.target.value)}
+                          disabled={!shiftSchedule[day.key].isActive}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                onClick={handleSaveEmployeeShifts}
+                className="w-full btn-primary"
+                disabled={!shiftEmployeeId || updateEmployeeSchedule.isPending}
+              >
+                {updateEmployeeSchedule.isPending ? "Guardando..." : "Guardar turnos"}
+              </Button>
             </Card>
           </TabsContent>
 

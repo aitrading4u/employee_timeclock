@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Clock, LogOut, Calendar, Calculator, AlertCircle } from 'lucide-react';
+import { Clock, LogOut, Calendar, Calculator, AlertCircle, CalendarDays } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -450,6 +450,20 @@ export default function EmployeeDashboard() {
               <div>
                 <h3 className="font-semibold text-foreground">Calendario y Calculadora</h3>
                 <p className="text-sm text-muted-foreground">Ver mis horas</p>
+              </div>
+            </div>
+          </Card>
+          <Card
+            className="p-6 hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => setLocation('/employee/schedule')}
+          >
+            <div className="flex items-center gap-4">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                <CalendarDays className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">Horario</h3>
+                <p className="text-sm text-muted-foreground">Ver mis turnos</p>
               </div>
             </div>
           </Card>
