@@ -85,13 +85,13 @@ async function startServer() {
 
   // Start notification scheduler - check every minute
   setInterval(() => {
-    checkAndSendNotifications({ timeZone: "Europe/Madrid", leadMinutes: 1 }).catch((error) => {
+    checkAndSendNotifications({ timeZone: "Europe/Madrid", leadMinutes: 5 }).catch((error) => {
       console.error("Error in notification scheduler:", error);
     });
   }, 60000); // Check every minute
 
   // Also check immediately on startup
-  checkAndSendNotifications({ timeZone: "Europe/Madrid", leadMinutes: 1 }).catch((error) => {
+  checkAndSendNotifications({ timeZone: "Europe/Madrid", leadMinutes: 5 }).catch((error) => {
     console.error("Error in initial notification check:", error);
   });
 }

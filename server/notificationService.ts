@@ -69,12 +69,15 @@ export async function sendPushNotification(
 type NotificationOptions = {
   timeZone?: string;
   leadMinutes?: number;
+  lookbackMinutes?: number;
 };
 
 const DEFAULT_TIME_ZONE = "Europe/Madrid";
+const DEFAULT_ENTRY_LEAD_MINUTES = 5;
+const DEFAULT_LOOKBACK_MINUTES = 65;
 const EXIT_REMINDER_STARTS = [
-  { time: "15:30", intervalMinutes: 30, repeats: 3 },
-  { time: "22:30", intervalMinutes: 30, repeats: 3 },
+  { time: "15:30", intervalMinutes: 30, repeats: 12 },
+  { time: "22:30", intervalMinutes: 30, repeats: 8 },
 ];
 const EXIT_REMINDER_SLOT = 0;
 
@@ -145,14 +148,15 @@ export async function checkAndSendNotifications(
 
   const now = new Date();
   const timeZone = options.timeZone || DEFAULT_TIME_ZONE;
-  const leadMinutes = Math.max(0, options.leadMinutes ?? 0);
+  const leadMinutes = Math.max(0, options.leadMinutes ?? DEFAULT_ENTRY_LEAD_MINUTES);
+  const lookbackMinutes = Math.max(1, options.lookbackMinutes ?? DEFAULT_LOOKBACK_MINUTES);
   const { year, month, day, hour, minute } = getTimePartsInTimeZone(now, timeZone);
   const currentDate = new Date(year, month - 1, day, hour, minute, 0, 0);
   const currentDay = currentDate.getDay(); // 0-6 (Sunday-Saturday)
   const currentHour = currentDate.getHours();
   const currentMinute = currentDate.getMinutes();
   // Date-only value for schedule logging
-  const todayDate = new Date(year, month - 1, day);
+  const todayDate = getDateKeyInTimeZone(currentDate, timeZone);
 
   // Get all active employees with schedules for today
   const todaySchedules = await db
@@ -175,8 +179,8 @@ export async function checkAndSendNotifications(
     const notifyAt = scheduleTime - leadMinutes;
     const timeDiff = currentTime - notifyAt;
 
-    // Send notification at lead time or up to 1 minute after
-    if (timeDiff >= 0 && timeDiff <= 1) {
+    // Send notification at lead time or up to lookback window after.
+    if (timeDiff >= 0 && timeDiff <= lookbackMinutes) {
       // Check if we already sent a notification for this time today
       const existingLog = await db
         .select()
@@ -265,7 +269,7 @@ export async function checkAndSendNotifications(
   const currentMinutes = currentHour * 60 + currentMinute;
   const matchingSlots = exitReminderSlots.filter(slot => {
     const diff = currentMinutes - slot.minuteOfDay;
-    return diff >= 0 && diff <= 1;
+    return diff >= 0 && diff <= lookbackMinutes;
   });
 
   if (matchingSlots.length === 0) return;
@@ -312,7 +316,7 @@ export async function checkAndSendNotifications(
           inArray(notificationLogs.employeeId, candidateEmployeeIds),
           eq(notificationLogs.entrySlot, EXIT_REMINDER_SLOT),
           eq(notificationLogs.entryTime, reminderTime),
-          eq(notificationLogs.scheduleDate, reminderDate)
+          eq(notificationLogs.scheduleDate, reminderDateKey)
         )
       );
     const alreadyNotified = new Set(existingLogs.map(log => log.employeeId));
@@ -344,7 +348,7 @@ export async function checkAndSendNotifications(
           await db.insert(notificationLogs).values({
             employeeId,
             entryTime: reminderTime,
-            scheduleDate: reminderDate,
+            scheduleDate: reminderDateKey,
             entrySlot: EXIT_REMINDER_SLOT,
           });
         } catch (error) {

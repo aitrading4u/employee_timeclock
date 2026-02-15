@@ -80,22 +80,6 @@ export default function EmployeeDashboard() {
       }
 
       try {
-        // Check if already subscribed
-        const registration = await navigator.serviceWorker.ready;
-        const existingSubscription = await registration.pushManager.getSubscription();
-        
-        if (existingSubscription) {
-          // Already subscribed, update if needed
-          return;
-        }
-
-        // Request permission
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          console.log('Notification permission denied');
-          return;
-        }
-
         // Convert VAPID key from base64url to Uint8Array
         const vapidPublicKey = vapidKeyQuery.data.publicKey;
         const urlBase64ToUint8Array = (base64String: string) => {
@@ -111,16 +95,7 @@ export default function EmployeeDashboard() {
           return outputArray;
         };
 
-        // Subscribe to push notifications
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-        });
-
         // Convert keys to base64url format
-        const p256dhKey = subscription.getKey('p256dh');
-        const authKey = subscription.getKey('auth');
-        
         const base64UrlEncode = (arrayBuffer: ArrayBuffer): string => {
           const bytes = new Uint8Array(arrayBuffer);
           let binary = '';
@@ -133,19 +108,50 @@ export default function EmployeeDashboard() {
             .replace(/=/g, '');
         };
 
-        // Send subscription to server
-        await subscribePushMutation.mutateAsync({
-          username: employeeAuth.username,
-          password: employeeAuth.password,
-          employeeId: employeeAuth.employeeId,
-          subscription: {
-            endpoint: subscription.endpoint,
-            keys: {
-              p256dh: base64UrlEncode(p256dhKey!),
-              auth: base64UrlEncode(authKey!),
+        const syncSubscriptionWithServer = async (subscription: PushSubscription) => {
+          const p256dhKey = subscription.getKey('p256dh');
+          const authKey = subscription.getKey('auth');
+          if (!p256dhKey || !authKey) {
+            throw new Error('Invalid push subscription keys');
+          }
+
+          await subscribePushMutation.mutateAsync({
+            username: employeeAuth.username,
+            password: employeeAuth.password,
+            employeeId: employeeAuth.employeeId,
+            subscription: {
+              endpoint: subscription.endpoint,
+              keys: {
+                p256dh: base64UrlEncode(p256dhKey),
+                auth: base64UrlEncode(authKey),
+              },
             },
-          },
+          });
+        };
+
+        // Check if already subscribed
+        const registration = await navigator.serviceWorker.ready;
+        const existingSubscription = await registration.pushManager.getSubscription();
+        
+        if (existingSubscription) {
+          // Ensure backend has the existing subscription (important after DB resets/deploys)
+          await syncSubscriptionWithServer(existingSubscription);
+          return;
+        }
+
+        // Request permission
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          console.log('Notification permission denied');
+          return;
+        }
+
+        // Subscribe to push notifications
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
         });
+        await syncSubscriptionWithServer(subscription);
 
         console.log('Push notification subscription successful');
       } catch (error) {
