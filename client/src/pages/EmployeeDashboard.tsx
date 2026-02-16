@@ -22,27 +22,51 @@ const weekdayKeys = [
 ] as const;
 
 function getCurrentLocationOnce(): Promise<{ lat: number; lng: number }> {
-  return new Promise((resolve, reject) => {
+  const readLocation = (options: PositionOptions) =>
+    new Promise<{ lat: number; lng: number }>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        (error) => {
+          reject(error);
+        },
+        options
+      );
+    });
+
+  return new Promise(async (resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Geolocalización no disponible'));
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        });
-      },
-      (error) => {
-        reject(error);
-      },
-      {
+
+    try {
+      // Fast path: use a recent location fix if available.
+      const fastLocation = await readLocation({
+        enableHighAccuracy: false,
+        timeout: 3500,
+        maximumAge: 45000,
+      });
+      resolve(fastLocation);
+      return;
+    } catch {
+      // Ignore and fallback to high-accuracy attempt.
+    }
+
+    try {
+      const preciseLocation = await readLocation({
         enableHighAccuracy: true,
-        timeout: 12000,
+        timeout: 10000,
         maximumAge: 0,
-      }
-    );
+      });
+      resolve(preciseLocation);
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
@@ -54,14 +78,24 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function isNetworkFetchError(error: unknown): boolean {
+  const message = getErrorMessage(error, "").toLowerCase();
+  return message.includes("failed to fetch") || message.includes("networkerror");
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function EmployeeDashboard() {
   const clockInMutation = trpc.publicApi.clockIn.useMutation();
   const clockOutMutation = trpc.publicApi.clockOut.useMutation();
   const subscribePushMutation = trpc.publicApi.pushNotifications.subscribe.useMutation();
   const vapidKeyQuery = trpc.publicApi.pushNotifications.getVapidPublicKey.useQuery();
   const [, setLocation] = useLocation();
-  const { employeeAuth, setEmployeeAuth, setLastLocation } = useAuthContext();
-  const [location, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const { employeeAuth, setEmployeeAuth, setLastLocation, lastLocation } = useAuthContext();
+  const [location, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(() => lastLocation);
+  const [lastLocationFixAt, setLastLocationFixAt] = useState<number | null>(() => (lastLocation ? Date.now() : null));
   const [isAtRestaurant, setIsAtRestaurant] = useState(false);
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -297,6 +331,7 @@ export default function EmployeeDashboard() {
         const coords = await getCurrentLocationOnce();
         if (cancelled) return;
         setCurrentLocation(coords);
+        setLastLocationFixAt(Date.now());
         setLastLocation(coords);
       } catch (error) {
         if (!warningShown) {
@@ -334,12 +369,27 @@ export default function EmployeeDashboard() {
     setIsAtRestaurant(distance <= restaurant.radiusMeters);
   }, [location, employeeRestaurantQuery.data]);
 
+  const getLatestClockLocation = async () => {
+    const now = Date.now();
+    const canReuseLocation = Boolean(
+      location &&
+      lastLocationFixAt &&
+      now - lastLocationFixAt < 90_000
+    );
+    const latestLocation = canReuseLocation ? location! : await getCurrentLocationOnce();
+    if (!canReuseLocation) {
+      setCurrentLocation(latestLocation);
+      setLastLocationFixAt(Date.now());
+      setLastLocation(latestLocation);
+    }
+    return latestLocation;
+  };
+
   const handleClockIn = async () => {
+    if (loading) return;
     setLoading(true);
     try {
-      const latestLocation = await getCurrentLocationOnce();
-      setCurrentLocation(latestLocation);
-      setLastLocation(latestLocation);
+      const latestLocation = await getLatestClockLocation();
 
       await clockInMutation.mutateAsync({
         username: employeeAuth?.username || "",
@@ -352,18 +402,47 @@ export default function EmployeeDashboard() {
       employeeTimeclocks.refetch();
       toast.success('¡Entrada registrada!');
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Error al registrar entrada'));
+      if (!isNetworkFetchError(error)) {
+        toast.error(getErrorMessage(error, 'Error al registrar entrada'));
+      } else {
+        try {
+          await wait(1200);
+          const retryLocation = await getLatestClockLocation();
+          await clockInMutation.mutateAsync({
+            username: employeeAuth?.username || "",
+            password: employeeAuth?.password || "",
+            employeeId: employeeAuth?.employeeId || 0,
+            latitude: retryLocation.lat,
+            longitude: retryLocation.lng,
+          });
+          setIsClockedIn(true);
+          employeeTimeclocks.refetch();
+          toast.success('¡Entrada registrada!');
+        } catch (retryError) {
+          if (isNetworkFetchError(retryError)) {
+            const refreshed = await employeeTimeclocks.refetch();
+            const openRecord = (refreshed.data || []).some((entry) => entry.entryTime && !entry.exitTime);
+            if (openRecord) {
+              setIsClockedIn(true);
+              toast.success('¡Entrada registrada! (la conexión estaba inestable)');
+            } else {
+              toast.error('Sin conexión con el servidor. Revisa internet e inténtalo de nuevo.');
+            }
+          } else {
+            toast.error(getErrorMessage(retryError, 'Error al registrar entrada'));
+          }
+        }
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleClockOut = async () => {
+    if (loading) return;
     setLoading(true);
     try {
-      const latestLocation = await getCurrentLocationOnce();
-      setCurrentLocation(latestLocation);
-      setLastLocation(latestLocation);
+      const latestLocation = await getLatestClockLocation();
 
       await clockOutMutation.mutateAsync({
         username: employeeAuth?.username || "",
@@ -376,7 +455,37 @@ export default function EmployeeDashboard() {
       employeeTimeclocks.refetch();
       toast.success('¡Salida registrada!');
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Error al registrar salida'));
+      if (!isNetworkFetchError(error)) {
+        toast.error(getErrorMessage(error, 'Error al registrar salida'));
+      } else {
+        try {
+          await wait(1200);
+          const retryLocation = await getLatestClockLocation();
+          await clockOutMutation.mutateAsync({
+            username: employeeAuth?.username || "",
+            password: employeeAuth?.password || "",
+            employeeId: employeeAuth?.employeeId || 0,
+            latitude: retryLocation.lat,
+            longitude: retryLocation.lng,
+          });
+          setIsClockedIn(false);
+          employeeTimeclocks.refetch();
+          toast.success('¡Salida registrada!');
+        } catch (retryError) {
+          if (isNetworkFetchError(retryError)) {
+            const refreshed = await employeeTimeclocks.refetch();
+            const openRecord = (refreshed.data || []).some((entry) => entry.entryTime && !entry.exitTime);
+            if (!openRecord) {
+              setIsClockedIn(false);
+              toast.success('¡Salida registrada! (la conexión estaba inestable)');
+            } else {
+              toast.error('Sin conexión con el servidor. Revisa internet e inténtalo de nuevo.');
+            }
+          } else {
+            toast.error(getErrorMessage(retryError, 'Error al registrar salida'));
+          }
+        }
+      }
     } finally {
       setLoading(false);
     }

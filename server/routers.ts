@@ -17,7 +17,9 @@ import {
   getIncidentById,
   getEmployeeByUsername,
   getOrCreateLocalAdmin,
-  getTimeclockById
+  getTimeclockById,
+  getTodayTimeclocksByEmployee,
+  getLatestOpenTimeclockByEmployee
 } from "./db";
 import { getVapidPublicKey, sendPushNotification } from "./notificationService";
 import { restaurants, employees, schedules, timeclocks, incidents, users, pushSubscriptions, notificationLogs } from "../drizzle/schema";
@@ -808,13 +810,13 @@ export const appRouter = router({
       if (distance > restaurant.radiusMeters) {
         throw new Error("You are not at the restaurant location");
       }
-      const todayTimeclocks = await getTimeclocksByEmployee(input.employeeId);
-      const openRecord = todayTimeclocks.find(tc => tc.entryTime && !tc.exitTime);
+      const openRecord = await getLatestOpenTimeclockByEmployee(input.employeeId);
       if (openRecord) throw new Error("You must clock out before clocking in again");
       const now = new Date();
       let isLate = false;
       const graceMinutes = employee.lateGraceMinutes ?? 5;
       const dayOfWeek = now.getDay();
+      const todayTimeclocks = await getTodayTimeclocksByEmployee(input.employeeId, now);
       const completedShifts = todayTimeclocks.filter(tc => tc.exitTime).length;
       const schedule =
         completedShifts === 0
@@ -873,10 +875,7 @@ export const appRouter = router({
       if (distance > restaurant.radiusMeters) {
         throw new Error("You are not at the restaurant location");
       }
-      const todayTimeclocks = await getTimeclocksByEmployee(input.employeeId);
-      const openRecord = todayTimeclocks
-        .filter(tc => tc.entryTime && !tc.exitTime)
-        .sort((a, b) => new Date(b.entryTime || 0).getTime() - new Date(a.entryTime || 0).getTime())[0];
+      const openRecord = await getLatestOpenTimeclockByEmployee(input.employeeId);
       if (!openRecord) throw new Error("No active timeclock entry found");
       const now = new Date();
       await db.update(timeclocks).set({
@@ -1214,16 +1213,8 @@ export const appRouter = router({
         throw new Error('You are not at the restaurant location');
       }
       
-      // Check if already clocked in today
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const todayTimeclocks = await getTimeclocksByEmployee(input.employeeId);
-      const openRecord = todayTimeclocks.find(tc => {
-        const tcDate = new Date(tc.createdAt);
-        tcDate.setHours(0, 0, 0, 0);
-        return tcDate.getTime() === today.getTime() && tc.entryTime && !tc.exitTime;
-      });
+      // Check if there is any active open record
+      const openRecord = await getLatestOpenTimeclockByEmployee(input.employeeId);
       if (openRecord) {
         throw new Error('You must clock out before clocking in again');
       }
@@ -1231,6 +1222,7 @@ export const appRouter = router({
       // Check if late
       const now = new Date();
       const dayOfWeek = now.getDay();
+      const todayTimeclocks = await getTodayTimeclocksByEmployee(input.employeeId, now);
       const completedShifts = todayTimeclocks.filter(tc => tc.exitTime).length;
       const schedule =
         completedShifts === 0
@@ -1291,16 +1283,8 @@ export const appRouter = router({
         throw new Error('You are not at the restaurant location');
       }
       
-      // Get today's timeclock entry
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const todayTimeclocks = await getTimeclocksByEmployee(input.employeeId);
-      const todayRecord = todayTimeclocks.find(tc => {
-        const tcDate = new Date(tc.createdAt);
-        tcDate.setHours(0, 0, 0, 0);
-        return tcDate.getTime() === today.getTime() && tc.entryTime && !tc.exitTime;
-      });
+      // Get latest active timeclock entry
+      const todayRecord = await getLatestOpenTimeclockByEmployee(input.employeeId);
       
       if (!todayRecord) {
         throw new Error('No active timeclock entry found');

@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc, gte, lt, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { InsertUser, users, employees, restaurants, schedules, timeclocks, incidents } from "../drizzle/schema";
@@ -203,6 +203,40 @@ export async function getTimeclocksByEmployee(employeeId: number) {
   const db = await getDb();
   if (!db) return [];
   return await db.select().from(timeclocks).where(eq(timeclocks.employeeId, employeeId));
+}
+
+export async function getTodayTimeclocksByEmployee(employeeId: number, date = new Date()) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const dayStart = new Date(date);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  return await db
+    .select()
+    .from(timeclocks)
+    .where(
+      and(
+        eq(timeclocks.employeeId, employeeId),
+        gte(timeclocks.createdAt, dayStart),
+        lt(timeclocks.createdAt, dayEnd)
+      )
+    )
+    .orderBy(desc(timeclocks.createdAt));
+}
+
+export async function getLatestOpenTimeclockByEmployee(employeeId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(timeclocks)
+    .where(and(eq(timeclocks.employeeId, employeeId), isNull(timeclocks.exitTime)))
+    .orderBy(desc(timeclocks.createdAt))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getTimeclockById(id: number) {

@@ -44,13 +44,13 @@ export async function sendPushNotification(
         body,
         icon: "/icon.svg",
         badge: "/icon.svg",
-        tag: "timeclock-notification",
+        tag: typeof data?.tag === "string" ? data.tag : "timeclock-notification",
         data: data || {},
       })
     );
   } catch (error: any) {
-    // If subscription is invalid, we might want to remove it
-    if (error.statusCode === 410 || error.statusCode === 404) {
+    // Remove invalid subscriptions so the client can re-subscribe with a fresh endpoint.
+    if ([400, 401, 403, 404, 410].includes(error.statusCode)) {
       const db = await getDb();
       if (db) {
         await db
@@ -76,8 +76,8 @@ const DEFAULT_TIME_ZONE = "Europe/Madrid";
 const DEFAULT_ENTRY_LEAD_MINUTES = 5;
 const DEFAULT_LOOKBACK_MINUTES = 65;
 const EXIT_REMINDER_STARTS = [
-  { time: "15:30", intervalMinutes: 30, repeats: 12 },
-  { time: "22:30", intervalMinutes: 30, repeats: 8 },
+  { time: "15:30", intervalMinutes: 30, repeats: 3 },
+  { time: "22:30", intervalMinutes: 30, repeats: 3 },
 ];
 const EXIT_REMINDER_SLOT = 0;
 
@@ -140,6 +140,17 @@ function buildExitReminderSlots() {
   return slots;
 }
 
+function getWrappedMinuteDiff(currentMinuteOfDay: number, slotMinuteOfDay: number) {
+  return ((currentMinuteOfDay - slotMinuteOfDay) + 1440) % 1440;
+}
+
+function buildEntryReminderSlots(scheduleTime: number, leadMinutes: number) {
+  const slots = new Set<number>();
+  slots.add(scheduleTime);
+  slots.add(scheduleTime - leadMinutes);
+  return Array.from(slots).map((minute) => ((minute % 1440) + 1440) % 1440);
+}
+
 export async function checkAndSendNotifications(
   options: NotificationOptions = {}
 ): Promise<void> {
@@ -171,67 +182,67 @@ export async function checkAndSendNotifications(
 
   for (const schedule of todaySchedules) {
     const [scheduleHour, scheduleMinute] = schedule.entryTime.split(":").map(Number);
-    
-    // Check if it's time to send notification (at the scheduled time or within the last minute)
-    // This handles cases where the server was down or there was a delay
     const scheduleTime = scheduleHour * 60 + scheduleMinute;
     const currentTime = currentHour * 60 + currentMinute;
-    const notifyAt = scheduleTime - leadMinutes;
-    const timeDiff = currentTime - notifyAt;
+    const reminderSlots = buildEntryReminderSlots(scheduleTime, leadMinutes);
 
-    // Send notification at lead time or up to lookback window after.
-    if (timeDiff >= 0 && timeDiff <= lookbackMinutes) {
-      // Check if we already sent a notification for this time today
+    // Check if employee already clocked in today
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const todayTimeclocks = await db
+      .select()
+      .from(timeclocks)
+      .where(
+        and(
+          eq(timeclocks.employeeId, schedule.employeeId),
+          gte(timeclocks.createdAt, todayStart),
+          lt(timeclocks.createdAt, todayEnd)
+        )
+      );
+
+    const hasClockedIn = todayTimeclocks.some(
+      (tc) => tc.entryTime && !tc.exitTime
+    );
+    if (hasClockedIn) {
+      continue;
+    }
+
+    for (const reminderMinute of reminderSlots) {
+      const reminderTime = formatMinutesToTime(reminderMinute);
+      const timeDiff = currentTime - reminderMinute;
+      if (timeDiff < 0 || timeDiff > lookbackMinutes) {
+        continue;
+      }
+
       const existingLog = await db
         .select()
         .from(notificationLogs)
         .where(
           and(
             eq(notificationLogs.employeeId, schedule.employeeId),
-            eq(notificationLogs.entryTime, schedule.entryTime),
+            eq(notificationLogs.entryTime, reminderTime),
             eq(notificationLogs.scheduleDate, todayDate),
             eq(notificationLogs.entrySlot, schedule.entrySlot)
           )
         )
         .limit(1);
-
       if (existingLog.length > 0) {
-        continue; // Already notified
+        continue;
       }
 
-      // Check if employee already clocked in today
-      const todayStart = new Date(now);
-      todayStart.setHours(0, 0, 0, 0);
-      const todayEnd = new Date(now);
-      todayEnd.setHours(23, 59, 59, 999);
-
-      const todayTimeclocks = await db
-        .select()
-        .from(timeclocks)
-        .where(
-          and(
-            eq(timeclocks.employeeId, schedule.employeeId),
-            gte(timeclocks.createdAt, todayStart),
-            lt(timeclocks.createdAt, todayEnd)
-          )
-        );
-
-      // Check if employee has already clocked in for this entry slot
-      const hasClockedIn = todayTimeclocks.some(
-        (tc) => tc.entryTime && !tc.exitTime
-      );
-
-      if (hasClockedIn) {
-        continue; // Already clocked in
-      }
-
-      // Get employee's push subscriptions
       const subscriptions = await db
         .select()
         .from(pushSubscriptions)
         .where(eq(pushSubscriptions.employeeId, schedule.employeeId));
 
-      // Send notification to all subscriptions
+      const isLeadReminder = reminderMinute !== scheduleTime;
+      const body = isLeadReminder
+        ? `En 5 minutos toca fichar entrada (${schedule.entryTime})`
+        : `Es hora de registrar tu entrada (${schedule.entryTime})`;
+
       for (const sub of subscriptions) {
         try {
           await sendPushNotification(
@@ -243,18 +254,18 @@ export async function checkAndSendNotifications(
               },
             },
             "⏰ Hora de entrada",
-            `Es hora de registrar tu entrada (${schedule.entryTime})`,
+            body,
             {
               url: "/employee/dashboard",
               entryTime: schedule.entryTime,
               entrySlot: schedule.entrySlot,
+              reminderType: isLeadReminder ? "lead_5m" : "on_time",
             }
           );
 
-          // Log the notification
           await db.insert(notificationLogs).values({
             employeeId: schedule.employeeId,
-            entryTime: schedule.entryTime,
+            entryTime: reminderTime,
             scheduleDate: todayDate,
             entrySlot: schedule.entrySlot,
           });
@@ -267,10 +278,14 @@ export async function checkAndSendNotifications(
 
   const exitReminderSlots = buildExitReminderSlots();
   const currentMinutes = currentHour * 60 + currentMinute;
-  const matchingSlots = exitReminderSlots.filter(slot => {
-    const diff = currentMinutes - slot.minuteOfDay;
-    return diff >= 0 && diff <= lookbackMinutes;
-  });
+  const matchingSlots = exitReminderSlots
+    .map(slot => {
+      const diff = getWrappedMinuteDiff(currentMinutes, slot.minuteOfDay);
+      const crossedMidnight = currentMinutes < slot.minuteOfDay;
+      const reminderDateOffset = slot.scheduleDateOffset - (crossedMidnight ? 1 : 0);
+      return { ...slot, diff, reminderDateOffset };
+    })
+    .filter(slot => slot.diff <= lookbackMinutes);
 
   if (matchingSlots.length === 0) return;
 
@@ -290,7 +305,7 @@ export async function checkAndSendNotifications(
   }
 
   for (const slot of matchingSlots) {
-    const reminderDate = addDays(currentDate, slot.scheduleDateOffset);
+    const reminderDate = addDays(currentDate, slot.reminderDateOffset);
     const reminderDateKey = getDateKeyInTimeZone(reminderDate, timeZone);
     const reminderTime = formatMinutesToTime(slot.minuteOfDay);
 
@@ -342,7 +357,10 @@ export async function checkAndSendNotifications(
             },
             "⏰ Recuerda fichar la salida",
             "No olvides registrar tu salida cuando termines.",
-            { url: "/employee/dashboard" }
+            {
+              url: "/employee/dashboard",
+              tag: `timeclock-exit-${reminderDateKey}-${reminderTime}-${employeeId}`,
+            }
           );
 
           await db.insert(notificationLogs).values({
