@@ -48,8 +48,8 @@ function getCurrentLocationOnce(): Promise<{ lat: number; lng: number }> {
       // Fast path: use a recent location fix if available.
       const fastLocation = await readLocation({
         enableHighAccuracy: false,
-        timeout: 3500,
-        maximumAge: 45000,
+        timeout: 2000,
+        maximumAge: 120000,
       });
       resolve(fastLocation);
       return;
@@ -80,7 +80,9 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 function isNetworkFetchError(error: unknown): boolean {
   const message = getErrorMessage(error, "").toLowerCase();
-  return message.includes("failed to fetch") || message.includes("networkerror");
+  if (message.includes("failed to fetch") || message.includes("networkerror")) return true;
+  if (message.includes("abort") || message.includes("timeout")) return true;
+  return false;
 }
 
 function wait(ms: number) {
@@ -104,6 +106,7 @@ export default function EmployeeDashboard() {
   const [isWorkDay, setIsWorkDay] = useState(true);
   const [lastClockOut, setLastClockOut] = useState<Date | null>(null);
   const notificationWarningShown = useRef(false);
+  const pushSubscriptionAttempted = useRef(false);
 
   const employeeTimeclocks = trpc.publicApi.getEmployeeTimeclocks.useQuery(
     {
@@ -136,93 +139,65 @@ export default function EmployeeDashboard() {
     }
   }, [employeeAuth, setLocation]);
 
-  // Request push notification permission and subscribe
+  // Request push notification permission and subscribe — solo una vez por sesión y con retraso para no saturar el servidor (p. ej. Render al despertar).
   useEffect(() => {
-    if (!employeeAuth || !vapidKeyQuery.data?.publicKey) return;
+    if (!employeeAuth || !vapidKeyQuery.data?.publicKey || pushSubscriptionAttempted.current) return;
+    pushSubscriptionAttempted.current = true;
 
     const subscribeToPushNotifications = async () => {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        console.log('Push notifications are not supported');
-        return;
-      }
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+      const vapidPublicKey = vapidKeyQuery.data!.publicKey;
+      const urlBase64ToUint8Array = (base64String: string) => {
+        const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+        return outputArray;
+      };
+      const base64UrlEncode = (arrayBuffer: ArrayBuffer): string => {
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      };
+
+      const syncSubscriptionWithServer = async (subscription: PushSubscription) => {
+        const p256dhKey = subscription.getKey('p256dh');
+        const authKey = subscription.getKey('auth');
+        if (!p256dhKey || !authKey) return;
+        await subscribePushMutation.mutateAsync({
+          username: employeeAuth!.username,
+          password: employeeAuth!.password,
+          employeeId: employeeAuth!.employeeId,
+          subscription: {
+            endpoint: subscription.endpoint,
+            keys: { p256dh: base64UrlEncode(p256dhKey), auth: base64UrlEncode(authKey) },
+          },
+        });
+      };
 
       try {
-        // Convert VAPID key from base64url to Uint8Array
-        const vapidPublicKey = vapidKeyQuery.data.publicKey;
-        const urlBase64ToUint8Array = (base64String: string) => {
-          const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-          const base64 = (base64String + padding)
-            .replace(/-/g, '+')
-            .replace(/_/g, '/');
-          const rawData = window.atob(base64);
-          const outputArray = new Uint8Array(rawData.length);
-          for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i);
-          }
-          return outputArray;
-        };
-
-        // Convert keys to base64url format
-        const base64UrlEncode = (arrayBuffer: ArrayBuffer): string => {
-          const bytes = new Uint8Array(arrayBuffer);
-          let binary = '';
-          for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          return btoa(binary)
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=/g, '');
-        };
-
-        const syncSubscriptionWithServer = async (subscription: PushSubscription) => {
-          const p256dhKey = subscription.getKey('p256dh');
-          const authKey = subscription.getKey('auth');
-          if (!p256dhKey || !authKey) {
-            throw new Error('Invalid push subscription keys');
-          }
-
-          await subscribePushMutation.mutateAsync({
-            username: employeeAuth.username,
-            password: employeeAuth.password,
-            employeeId: employeeAuth.employeeId,
-            subscription: {
-              endpoint: subscription.endpoint,
-              keys: {
-                p256dh: base64UrlEncode(p256dhKey),
-                auth: base64UrlEncode(authKey),
-              },
-            },
-          });
-        };
-
-        // Check if already subscribed
+        await new Promise((r) => setTimeout(r, 2500));
         const registration = await navigator.serviceWorker.ready;
         const existingSubscription = await registration.pushManager.getSubscription();
-        
+
         if (existingSubscription) {
-          // Ensure backend has the existing subscription (important after DB resets/deploys)
           await syncSubscriptionWithServer(existingSubscription);
           return;
         }
 
-        // Request permission
         const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          console.log('Notification permission denied');
-          return;
-        }
+        if (permission !== 'granted') return;
 
-        // Subscribe to push notifications
         const subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
         });
         await syncSubscriptionWithServer(subscription);
-
-        console.log('Push notification subscription successful');
-      } catch (error) {
-        console.error('Error subscribing to push notifications:', error);
+      } catch {
+        pushSubscriptionAttempted.current = false;
       }
     };
 
@@ -374,7 +349,7 @@ export default function EmployeeDashboard() {
     const canReuseLocation = Boolean(
       location &&
       lastLocationFixAt &&
-      now - lastLocationFixAt < 90_000
+      now - lastLocationFixAt < 180_000
     );
     const latestLocation = canReuseLocation ? location! : await getCurrentLocationOnce();
     if (!canReuseLocation) {
@@ -399,37 +374,45 @@ export default function EmployeeDashboard() {
         longitude: latestLocation.lng,
       });
       setIsClockedIn(true);
-      employeeTimeclocks.refetch();
+      employeeTimeclocks.refetch().catch(() => {});
       toast.success('¡Entrada registrada!');
     } catch (error) {
       if (!isNetworkFetchError(error)) {
         toast.error(getErrorMessage(error, 'Error al registrar entrada'));
       } else {
-        try {
-          await wait(1200);
-          const retryLocation = await getLatestClockLocation();
-          await clockInMutation.mutateAsync({
-            username: employeeAuth?.username || "",
-            password: employeeAuth?.password || "",
-            employeeId: employeeAuth?.employeeId || 0,
-            latitude: retryLocation.lat,
-            longitude: retryLocation.lng,
-          });
-          setIsClockedIn(true);
-          employeeTimeclocks.refetch();
-          toast.success('¡Entrada registrada!');
-        } catch (retryError) {
-          if (isNetworkFetchError(retryError)) {
-            const refreshed = await employeeTimeclocks.refetch();
-            const openRecord = (refreshed.data || []).some((entry) => entry.entryTime && !entry.exitTime);
-            if (openRecord) {
-              setIsClockedIn(true);
-              toast.success('¡Entrada registrada! (la conexión estaba inestable)');
-            } else {
-              toast.error('Sin conexión con el servidor. Revisa internet e inténtalo de nuevo.');
+        let done = false;
+        for (const delayMs of [500, 1500]) {
+          try {
+            await wait(delayMs);
+            const retryLocation = await getLatestClockLocation();
+            await clockInMutation.mutateAsync({
+              username: employeeAuth?.username || "",
+              password: employeeAuth?.password || "",
+              employeeId: employeeAuth?.employeeId || 0,
+              latitude: retryLocation.lat,
+              longitude: retryLocation.lng,
+            });
+            setIsClockedIn(true);
+            employeeTimeclocks.refetch().catch(() => {});
+            toast.success('¡Entrada registrada!');
+            done = true;
+            break;
+          } catch (retryError) {
+            if (!isNetworkFetchError(retryError)) {
+              toast.error(getErrorMessage(retryError, 'Error al registrar entrada'));
+              done = true;
+              break;
             }
+          }
+        }
+        if (!done) {
+          const refreshed = await employeeTimeclocks.refetch();
+          const openRecord = (refreshed.data || []).some((entry) => entry.entryTime && !entry.exitTime);
+          if (openRecord) {
+            setIsClockedIn(true);
+            toast.success('¡Entrada registrada! (la conexión estaba inestable)');
           } else {
-            toast.error(getErrorMessage(retryError, 'Error al registrar entrada'));
+            toast.error('Error de conexión. Espera unos segundos y vuelve a pulsar Entrada.');
           }
         }
       }
@@ -452,37 +435,45 @@ export default function EmployeeDashboard() {
         longitude: latestLocation.lng,
       });
       setIsClockedIn(false);
-      employeeTimeclocks.refetch();
+      employeeTimeclocks.refetch().catch(() => {});
       toast.success('¡Salida registrada!');
     } catch (error) {
       if (!isNetworkFetchError(error)) {
         toast.error(getErrorMessage(error, 'Error al registrar salida'));
       } else {
-        try {
-          await wait(1200);
-          const retryLocation = await getLatestClockLocation();
-          await clockOutMutation.mutateAsync({
-            username: employeeAuth?.username || "",
-            password: employeeAuth?.password || "",
-            employeeId: employeeAuth?.employeeId || 0,
-            latitude: retryLocation.lat,
-            longitude: retryLocation.lng,
-          });
-          setIsClockedIn(false);
-          employeeTimeclocks.refetch();
-          toast.success('¡Salida registrada!');
-        } catch (retryError) {
-          if (isNetworkFetchError(retryError)) {
-            const refreshed = await employeeTimeclocks.refetch();
-            const openRecord = (refreshed.data || []).some((entry) => entry.entryTime && !entry.exitTime);
-            if (!openRecord) {
-              setIsClockedIn(false);
-              toast.success('¡Salida registrada! (la conexión estaba inestable)');
-            } else {
-              toast.error('Sin conexión con el servidor. Revisa internet e inténtalo de nuevo.');
+        let done = false;
+        for (const delayMs of [500, 1500]) {
+          try {
+            await wait(delayMs);
+            const retryLocation = await getLatestClockLocation();
+            await clockOutMutation.mutateAsync({
+              username: employeeAuth?.username || "",
+              password: employeeAuth?.password || "",
+              employeeId: employeeAuth?.employeeId || 0,
+              latitude: retryLocation.lat,
+              longitude: retryLocation.lng,
+            });
+            setIsClockedIn(false);
+            employeeTimeclocks.refetch().catch(() => {});
+            toast.success('¡Salida registrada!');
+            done = true;
+            break;
+          } catch (retryError) {
+            if (!isNetworkFetchError(retryError)) {
+              toast.error(getErrorMessage(retryError, 'Error al registrar salida'));
+              done = true;
+              break;
             }
+          }
+        }
+        if (!done) {
+          const refreshed = await employeeTimeclocks.refetch();
+          const openRecord = (refreshed.data || []).some((entry) => entry.entryTime && !entry.exitTime);
+          if (!openRecord) {
+            setIsClockedIn(false);
+            toast.success('¡Salida registrada! (la conexión estaba inestable)');
           } else {
-            toast.error(getErrorMessage(retryError, 'Error al registrar salida'));
+            toast.error('Error de conexión. Espera unos segundos y vuelve a pulsar Salida.');
           }
         }
       }

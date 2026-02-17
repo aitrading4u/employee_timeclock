@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, TRPCClientError } from "@trpc/client";
+import { httpBatchLink, httpLink, splitLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
@@ -33,6 +33,8 @@ queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
+    const path = error instanceof TRPCClientError ? (error as TRPCClientError & { data?: { path?: string } }).data?.path : "";
+    if (typeof path === "string" && path.includes("pushNotifications")) return;
     console.error("[API Mutation Error]", error);
   }
 });
@@ -40,17 +42,42 @@ queryClient.getMutationCache().subscribe(event => {
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const trpcUrl = apiBaseUrl ? `${apiBaseUrl}/api/trpc` : "/api/trpc";
 
+const FETCH_TIMEOUT_MS = 30000;
+
+function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  return globalThis
+    .fetch(input, {
+      ...(init ?? {}),
+      credentials: "include",
+      signal: ctrl.signal,
+    })
+    .finally(() => clearTimeout(timeout));
+}
+
 const trpcClient = trpc.createClient({
   links: [
-    httpBatchLink({
-      url: trpcUrl,
-      transformer: superjson,
-      fetch(input, init) {
-        return globalThis.fetch(input, {
-          ...(init ?? {}),
-          credentials: "include",
-        });
-      },
+    splitLink({
+      condition: (op) => op.type === "mutation",
+      true: httpLink({
+        url: trpcUrl,
+        transformer: superjson,
+        fetch: fetchWithTimeout,
+      }),
+      false: httpBatchLink({
+        url: trpcUrl,
+        transformer: superjson,
+        fetch(input, init) {
+          return globalThis.fetch(input, {
+            ...(init ?? {}),
+            credentials: "include",
+          });
+        },
+      }),
     }),
   ],
 });

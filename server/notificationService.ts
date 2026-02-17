@@ -278,14 +278,13 @@ export async function checkAndSendNotifications(
 
   const exitReminderSlots = buildExitReminderSlots();
   const currentMinutes = currentHour * 60 + currentMinute;
+  const exitLookback = Math.max(lookbackMinutes, 70);
   const matchingSlots = exitReminderSlots
     .map(slot => {
       const diff = getWrappedMinuteDiff(currentMinutes, slot.minuteOfDay);
-      const crossedMidnight = currentMinutes < slot.minuteOfDay;
-      const reminderDateOffset = slot.scheduleDateOffset - (crossedMidnight ? 1 : 0);
-      return { ...slot, diff, reminderDateOffset };
+      return { ...slot, diff };
     })
-    .filter(slot => slot.diff <= lookbackMinutes);
+    .filter(slot => slot.diff <= exitLookback);
 
   if (matchingSlots.length === 0) return;
 
@@ -304,9 +303,10 @@ export async function checkAndSendNotifications(
     openByEmployee.set(clock.employeeId, list);
   }
 
+  const yesterdayDateKey = getDateKeyInTimeZone(new Date(now.getTime() - 86400000), timeZone);
+
   for (const slot of matchingSlots) {
-    const reminderDate = addDays(currentDate, slot.reminderDateOffset);
-    const reminderDateKey = getDateKeyInTimeZone(reminderDate, timeZone);
+    const reminderDateKey = slot.scheduleDateOffset === 0 ? todayDate : yesterdayDateKey;
     const reminderTime = formatMinutesToTime(slot.minuteOfDay);
 
     const candidateEmployeeIds: number[] = [];
