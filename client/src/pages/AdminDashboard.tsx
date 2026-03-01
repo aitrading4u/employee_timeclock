@@ -1030,10 +1030,13 @@ export default function AdminDashboard() {
               </div>
 
               {/* Calendar Display */}
-              <div className="p-4 bg-muted rounded-lg text-center">
-                <p className="text-muted-foreground">Horas registradas: {totalHours.toFixed(2)}h</p>
-              </div>
-              <div className="mt-4 space-y-2">
+              <Accordion type="single" collapsible defaultValue="hours-register">
+                <AccordionItem value="hours-register">
+                  <AccordionTrigger className="text-sm font-semibold text-foreground">
+                    Registro de horas ({filteredTimeclocks.length} fichajes, {totalHours.toFixed(2)} h)
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-2">
+                    <div className="space-y-2">
                 {filteredTimeclocks.length ? (
                   filteredTimeclocks.map((entry) => (
                     <div key={entry.id} className="flex items-start justify-between gap-4 p-3 border border-border rounded-lg">
@@ -1181,7 +1184,10 @@ export default function AdminDashboard() {
                 ) : (
                   <p className="text-sm text-muted-foreground">No hay fichajes en este rango.</p>
                 )}
-              </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
               <div className="mt-6 border border-border rounded-lg p-4">
                 <Accordion type="single" collapsible defaultValue="notifications-history">
                   <AccordionItem value="notifications-history">

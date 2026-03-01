@@ -65,6 +65,25 @@ async function startServer() {
       createContext,
     })
   );
+
+  // Endpoint para que un cron externo (p. ej. cron-job.org) dispare el chequeo de notificaciones.
+  // En Render el servidor se duerme; este endpoint lo despierta y envía los recordatorios.
+  // Uso: GET /api/cron/notifications?secret=TU_CRON_SECRET (configura CRON_SECRET en Render).
+  app.get("/api/cron/notifications", async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    if (secret != null && secret !== "" && req.query.secret !== secret) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    try {
+      await checkAndSendNotifications({ timeZone: "Europe/Madrid", leadMinutes: 5 });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Cron notifications error:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
