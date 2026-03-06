@@ -168,6 +168,7 @@ export default function AdminDashboard() {
     { enabled: Boolean(adminUsername && adminPassword) }
   );
   const updateTimeclock = trpc.publicApi.updateTimeclock.useMutation();
+  const deleteTimeclock = trpc.publicApi.deleteTimeclock.useMutation();
   const sendTestNotification = trpc.publicApi.sendTestNotification.useMutation();
   const clearAllTimeclocks = trpc.publicApi.clearAllTimeclocks.useMutation();
   const clearAllIncidents = trpc.publicApi.clearAllIncidents.useMutation();
@@ -334,6 +335,32 @@ export default function AdminDashboard() {
       })
       .catch((error) => {
         toast.error('No se pudo actualizar el fichaje');
+        console.error(error);
+      });
+  };
+
+  const handleDeleteTimeclock = (entry: { id: number; entryTime?: string | Date | null }) => {
+    const when = entry.entryTime ? new Date(entry.entryTime).toLocaleString("es-ES") : `#${entry.id}`;
+    const confirmed = window.confirm(
+      `¿Seguro que quieres borrar este fichaje (${when})? Esta acción no se puede deshacer.`
+    );
+    if (!confirmed) return;
+
+    deleteTimeclock
+      .mutateAsync({
+        username: adminUsername,
+        password: adminPassword,
+        timeclockId: entry.id,
+      })
+      .then(async () => {
+        if (editingTimeclockId === entry.id) {
+          handleCancelTimeclockEdit();
+        }
+        await timeclocksQuery.refetch();
+        toast.success('Fichaje borrado');
+      })
+      .catch((error) => {
+        toast.error(error?.message || 'No se pudo borrar el fichaje');
         console.error(error);
       });
   };
@@ -1071,13 +1098,23 @@ export default function AdminDashboard() {
                         </p>
                         {editingTimeclockId !== entry.id && (
                           <div className="mt-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleEditTimeclock(entry)}
-                            >
-                              Editar fichaje
-                            </Button>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleEditTimeclock(entry)}
+                              >
+                                Editar fichaje
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleDeleteTimeclock(entry)}
+                                disabled={deleteTimeclock.isPending}
+                              >
+                                Borrar fichaje
+                              </Button>
+                            </div>
                           </div>
                         )}
                         {editingTimeclockId === entry.id && (

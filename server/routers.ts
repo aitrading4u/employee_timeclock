@@ -598,6 +598,36 @@ export const appRouter = router({
       return { success: true };
     }),
 
+    deleteTimeclock: publicProcedure.input(
+      z.object({
+        username: z.string().min(1),
+        password: z.string().min(1),
+        timeclockId: z.number(),
+      })
+    ).mutation(async ({ input }) => {
+      const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+      const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+      if (input.username !== adminUsername || input.password !== adminPassword) {
+        throw new Error("Invalid admin credentials");
+      }
+      const admin = await getOrCreateLocalAdmin(input.username);
+      if (!admin) throw new Error("Admin not available");
+      const restaurant = await getRestaurantByAdmin(admin.id);
+      if (!restaurant) throw new Error("Restaurant not found");
+      const restaurantEmployees = await getEmployeesByRestaurant(restaurant.id);
+      const employeeIds = new Set(restaurantEmployees.map((employee) => employee.id));
+
+      const timeclock = await getTimeclockById(input.timeclockId);
+      if (!timeclock || !employeeIds.has(timeclock.employeeId)) {
+        throw new Error("Timeclock not found");
+      }
+
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      await db.delete(timeclocks).where(eq(timeclocks.id, input.timeclockId));
+      return { success: true };
+    }),
+
     getEmployeeTimeclocks: publicProcedure.input(
       z.object({
         username: z.string().min(1),
