@@ -325,8 +325,8 @@ export default function AdminDashboard() {
         username: adminUsername,
         password: adminPassword,
         timeclockId: editingTimeclockId,
-        entryTime: editingEntryTime,
-        exitTime: editingExitTime || null,
+        entryTime: editingEntryTime ? new Date(editingEntryTime).toISOString() : undefined,
+        exitTime: editingExitTime ? new Date(editingExitTime).toISOString() : null,
       })
       .then(() => {
         toast.success('Fichaje actualizado');
