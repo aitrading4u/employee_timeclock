@@ -1020,6 +1020,23 @@ export const appRouter = router({
         }
         const db = await getDb();
         if (!db) throw new Error("Database not available");
+        const conflicts = await db
+          .select({ id: timeOffRequests.id })
+          .from(timeOffRequests)
+          .where(
+            and(
+              eq(timeOffRequests.employeeId, input.employeeId),
+              inArray(timeOffRequests.status, ["pending", "approved"]),
+              lte(timeOffRequests.startDate, input.endDate),
+              gte(timeOffRequests.endDate, input.startDate)
+            )
+          )
+          .limit(1);
+        if (conflicts.length > 0) {
+          throw new Error(
+            "Las fechas se solapan con otra solicitud tuya pendiente o ya aprobada. Elige otros días."
+          );
+        }
         try {
           await db.insert(timeOffRequests).values({
             employeeId: input.employeeId,

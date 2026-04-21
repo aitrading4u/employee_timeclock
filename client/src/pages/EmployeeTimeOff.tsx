@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,12 +28,20 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function todayYmdMadrid(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Madrid" });
+}
+
+function ymdRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  return aStart <= bEnd && bStart <= aEnd;
+}
+
 export default function EmployeeTimeOff() {
   const [, setLocation] = useLocation();
   const { employeeAuth } = useAuthContext();
   const [kind, setKind] = useState<"vacation" | "day_off">("vacation");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(() => todayYmdMadrid());
+  const [endDate, setEndDate] = useState(() => todayYmdMadrid());
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -59,15 +67,25 @@ export default function EmployeeTimeOff() {
     }
   }, [employeeAuth, setLocation]);
 
-  useEffect(() => {
-    const t = new Date();
-    const y = t.getFullYear();
-    const m = String(t.getMonth() + 1).padStart(2, "0");
-    const d = String(t.getDate()).padStart(2, "0");
-    const today = `${y}-${m}-${d}`;
-    setStartDate(today);
-    setEndDate(today);
-  }, []);
+  const blockedRanges = useMemo(() => {
+    return (listQuery.data || [])
+      .filter((r) => r.status === "pending" || r.status === "approved")
+      .map((r) => ({ start: String(r.startDate), end: String(r.endDate) }));
+  }, [listQuery.data]);
+
+  const rangeBlocks = useMemo(() => {
+    const minD = todayYmdMadrid();
+    const order = !startDate || !endDate || endDate < startDate;
+    const past =
+      Boolean(startDate && endDate) && (startDate < minD || endDate < minD);
+    const overlap =
+      Boolean(startDate && endDate) &&
+      !order &&
+      blockedRanges.some((b) => ymdRangesOverlap(startDate, endDate, b.start, b.end));
+    return { past, order, overlap };
+  }, [startDate, endDate, blockedRanges]);
+
+  const rangeInvalid = rangeBlocks.past || rangeBlocks.order || rangeBlocks.overlap;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,6 +96,18 @@ export default function EmployeeTimeOff() {
     }
     if (!comment.trim()) {
       toast.error("Debes escribir un comentario (motivo o detalles)");
+      return;
+    }
+    if (rangeInvalid) {
+      if (rangeBlocks.order) {
+        toast.error("La fecha fin debe ser igual o posterior a la de inicio.");
+      } else if (rangeBlocks.past) {
+        toast.error("No puedes elegir fechas anteriores a hoy.");
+      } else if (rangeBlocks.overlap) {
+        toast.error(
+          "Esas fechas coinciden con otra solicitud pendiente o aprobada. Elige otros días."
+        );
+      }
       return;
     }
     setSubmitting(true);
@@ -93,6 +123,9 @@ export default function EmployeeTimeOff() {
       });
       toast.success("Solicitud enviada. El administrador la revisará.");
       setComment("");
+      const next = todayYmdMadrid();
+      setStartDate(next);
+      setEndDate(next);
       await listQuery.refetch();
     } catch (err) {
       toast.error(getErrorMessage(err, "No se pudo enviar la solicitud"));
@@ -161,7 +194,17 @@ export default function EmployeeTimeOff() {
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(ev) => setStartDate(ev.target.value)}
+                  min={todayYmdMadrid()}
+                  onChange={(ev) => {
+                    const minD = todayYmdMadrid();
+                    const raw = ev.target.value;
+                    const nextStart = raw < minD ? minD : raw;
+                    setStartDate(nextStart);
+                    setEndDate((prev) => {
+                      const e = prev < nextStart ? nextStart : prev;
+                      return e < minD ? minD : e;
+                    });
+                  }}
                   className="input-elegant mt-2 w-full"
                   required
                 />
@@ -171,12 +214,35 @@ export default function EmployeeTimeOff() {
                 <input
                   type="date"
                   value={endDate}
-                  onChange={(ev) => setEndDate(ev.target.value)}
+                  min={startDate < todayYmdMadrid() ? todayYmdMadrid() : startDate}
+                  onChange={(ev) => {
+                    const minD = todayYmdMadrid();
+                    const minEnd = startDate < minD ? minD : startDate;
+                    const raw = ev.target.value;
+                    setEndDate(raw < minEnd ? minEnd : raw);
+                  }}
                   className="input-elegant mt-2 w-full"
                   required
                 />
               </div>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Solo fechas desde hoy (calendario España). No puedes repetir días que ya tienes en una
+              solicitud pendiente o aprobada.
+            </p>
+            {rangeBlocks.order ? (
+              <p className="text-sm text-destructive">
+                La fecha de fin no puede ser anterior a la de inicio.
+              </p>
+            ) : null}
+            {rangeBlocks.past && !rangeBlocks.order ? (
+              <p className="text-sm text-destructive">No uses fechas anteriores a hoy.</p>
+            ) : null}
+            {rangeBlocks.overlap && !rangeBlocks.order && !rangeBlocks.past ? (
+              <p className="text-sm text-destructive">
+                Este rango coincide con otra solicitud pendiente o aprobada. Elige otras fechas.
+              </p>
+            ) : null}
             <div>
               <Label className="text-foreground">Comentario (obligatorio)</Label>
               <Textarea
@@ -187,7 +253,7 @@ export default function EmployeeTimeOff() {
                 required
               />
             </div>
-            <Button type="submit" className="w-full btn-primary" disabled={submitting}>
+            <Button type="submit" className="w-full btn-primary" disabled={submitting || rangeInvalid}>
               {submitting ? "Enviando…" : "Enviar solicitud"}
             </Button>
           </form>
