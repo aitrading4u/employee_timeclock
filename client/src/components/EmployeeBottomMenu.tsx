@@ -1,9 +1,10 @@
-import { Calendar, CalendarDays, Palmtree } from "lucide-react";
+import { Calendar, CalendarDays, House, Palmtree } from "lucide-react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const items = [
+  { key: "dashboard", label: "Inicio", path: "/employee", icon: House },
   { key: "timeoff", label: "Vacaciones", path: "/employee/time-off", icon: Palmtree },
   { key: "calendar", label: "Calendario", path: "/employee/calendar", icon: Calendar },
   { key: "schedule", label: "Horario", path: "/employee/schedule", icon: CalendarDays },
@@ -14,7 +15,7 @@ export default function EmployeeBottomMenu() {
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/75">
-      <div className="container py-2 grid grid-cols-3 gap-2">
+      <div className="container py-2 grid grid-cols-4 gap-2">
         {items.map((item) => {
           const active = location === item.path;
           const Icon = item.icon;
