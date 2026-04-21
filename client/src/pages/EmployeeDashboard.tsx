@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Clock, LogOut, Calendar, Calculator, AlertCircle, CalendarDays } from 'lucide-react';
+import { Clock, LogOut, Calendar, Calculator, AlertCircle, CalendarDays, Palmtree } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -583,7 +583,21 @@ export default function EmployeeDashboard() {
         </Button>
 
         {/* Quick Links */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card
+            className="p-6 hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => setLocation('/employee/time-off')}
+          >
+            <div className="flex items-center gap-4">
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-teal-100 dark:bg-teal-900/30 rounded-lg">
+                <Palmtree className="w-6 h-6 text-teal-700 dark:text-teal-300" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">Vacaciones / días libres</h3>
+                <p className="text-sm text-muted-foreground">Solicitar con antelación</p>
+              </div>
+            </div>
+          </Card>
           <Card
             className="p-6 hover:shadow-md transition-shadow cursor-pointer"
             onClick={() => setLocation('/employee/calendar')}

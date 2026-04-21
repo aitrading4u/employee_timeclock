@@ -22,8 +22,49 @@ import {
   getLatestOpenTimeclockByEmployee
 } from "./db";
 import { getVapidPublicKey, sendPushNotification } from "./notificationService";
-import { restaurants, employees, schedules, timeclocks, incidents, users, pushSubscriptions, notificationLogs } from "../drizzle/schema";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import {
+  restaurants,
+  employees,
+  schedules,
+  timeclocks,
+  incidents,
+  users,
+  pushSubscriptions,
+  notificationLogs,
+  timeOffRequests,
+} from "../drizzle/schema";
+import { eq, and, desc, inArray, lte, gte } from "drizzle-orm";
+import { format } from "date-fns";
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** Primer y último día del mes calendario (1–12) como `YYYY-MM-DD` en UTC. */
+function calendarMonthRange(year: number, month: number): { start: string; end: string } {
+  const start = `${year}-${pad2(month)}-01`;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const end = `${year}-${pad2(month)}-${pad2(lastDay)}`;
+  return { start, end };
+}
+
+function addOneCalendarDayUtc(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const t = Date.UTC(y, m - 1, d) + 86400000;
+  const dt = new Date(t);
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+}
+
+function listDatesInclusive(start: string, end: string): string[] {
+  if (end < start) return [];
+  const out: string[] = [];
+  let cur = start;
+  while (cur <= end) {
+    out.push(cur);
+    cur = addOneCalendarDayUtc(cur);
+  }
+  return out;
+}
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') {
@@ -943,6 +984,220 @@ export const appRouter = router({
       });
       return { success: true };
     }),
+
+    createTimeOffRequest: publicProcedure
+      .input(
+        z.object({
+          username: z.string().min(1),
+          password: z.string().min(1),
+          employeeId: z.number(),
+          kind: z.enum(["vacation", "day_off"]),
+          startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          comment: z.string().min(1).max(2000),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const employee = await getEmployeeByUsername(input.username);
+        if (!employee || employee.id !== input.employeeId) {
+          throw new Error("Empleado no encontrado");
+        }
+        const hashed = Buffer.from(input.password).toString("base64");
+        if (employee.password !== hashed) {
+          throw new Error("Credenciales inválidas");
+        }
+        if (input.endDate < input.startDate) {
+          throw new Error("La fecha fin debe ser igual o posterior a la de inicio");
+        }
+        const todayStr = format(new Date(), "yyyy-MM-dd");
+        if (input.startDate < todayStr) {
+          throw new Error("La solicitud debe ser para hoy o fechas futuras");
+        }
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        await db.insert(timeOffRequests).values({
+          employeeId: input.employeeId,
+          kind: input.kind,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          comment: input.comment.trim(),
+          status: "pending",
+        });
+        return { success: true };
+      }),
+
+    listMyTimeOffRequests: publicProcedure
+      .input(
+        z.object({
+          username: z.string().min(1),
+          password: z.string().min(1),
+          employeeId: z.number(),
+        })
+      )
+      .query(async ({ input }) => {
+        const employee = await getEmployeeByUsername(input.username);
+        if (!employee || employee.id !== input.employeeId) {
+          throw new Error("Empleado no encontrado");
+        }
+        const hashed = Buffer.from(input.password).toString("base64");
+        if (employee.password !== hashed) {
+          throw new Error("Credenciales inválidas");
+        }
+        const db = await getDb();
+        if (!db) return [];
+        return await db
+          .select()
+          .from(timeOffRequests)
+          .where(eq(timeOffRequests.employeeId, input.employeeId))
+          .orderBy(desc(timeOffRequests.createdAt));
+      }),
+
+    listTimeOffRequests: publicProcedure
+      .input(
+        z.object({
+          username: z.string().min(1),
+          password: z.string().min(1),
+          status: z.enum(["pending", "approved", "rejected", "all"]).optional().default("all"),
+        })
+      )
+      .query(async ({ input }) => {
+        const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+        const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+        if (input.username !== adminUsername || input.password !== adminPassword) {
+          throw new Error("Invalid admin credentials");
+        }
+        const admin = await getOrCreateLocalAdmin(input.username);
+        if (!admin) return [];
+        const restaurant = await getRestaurantByAdmin(admin.id);
+        if (!restaurant) return [];
+        const restaurantEmployees = await getEmployeesByRestaurant(restaurant.id);
+        const employeeIds = restaurantEmployees.map((e) => e.id);
+        if (employeeIds.length === 0) return [];
+        const db = await getDb();
+        if (!db) return [];
+        const nameById = new Map(restaurantEmployees.map((e) => [e.id, e.name]));
+        const rows = await db
+          .select()
+          .from(timeOffRequests)
+          .where(inArray(timeOffRequests.employeeId, employeeIds))
+          .orderBy(desc(timeOffRequests.createdAt));
+        const filtered =
+          input.status === "all" ? rows : rows.filter((r) => r.status === input.status);
+        return filtered.map((r) => ({
+          ...r,
+          employeeName: nameById.get(r.employeeId) ?? "—",
+        }));
+      }),
+
+    decideTimeOffRequest: publicProcedure
+      .input(
+        z.object({
+          username: z.string().min(1),
+          password: z.string().min(1),
+          requestId: z.number(),
+          decision: z.enum(["approved", "rejected"]),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+        const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+        if (input.username !== adminUsername || input.password !== adminPassword) {
+          throw new Error("Invalid admin credentials");
+        }
+        const admin = await getOrCreateLocalAdmin(input.username);
+        if (!admin) throw new Error("Admin not available");
+        const restaurant = await getRestaurantByAdmin(admin.id);
+        if (!restaurant) throw new Error("Restaurant not found");
+        const restaurantEmployees = await getEmployeesByRestaurant(restaurant.id);
+        const employeeIds = new Set(restaurantEmployees.map((e) => e.id));
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const [row] = await db
+          .select()
+          .from(timeOffRequests)
+          .where(eq(timeOffRequests.id, input.requestId))
+          .limit(1);
+        if (!row) throw new Error("Solicitud no encontrada");
+        if (!employeeIds.has(row.employeeId)) throw new Error("No autorizado");
+        if (row.status !== "pending") {
+          throw new Error("Esta solicitud ya fue revisada");
+        }
+        await db
+          .update(timeOffRequests)
+          .set({
+            status: input.decision,
+            reviewedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(timeOffRequests.id, input.requestId));
+        return { success: true };
+      }),
+
+    getTimeOffCalendarMonth: publicProcedure
+      .input(
+        z.object({
+          username: z.string().min(1),
+          password: z.string().min(1),
+          year: z.number().int().min(2020).max(2100),
+          month: z.number().int().min(1).max(12),
+        })
+      )
+      .query(async ({ input }) => {
+        const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+        const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+        if (input.username !== adminUsername || input.password !== adminPassword) {
+          throw new Error("Invalid admin credentials");
+        }
+        const admin = await getOrCreateLocalAdmin(input.username);
+        if (!admin) return { days: [] as { date: string; entries: { employeeName: string; kind: string; status: string; requestId: number }[] }[] };
+        const restaurant = await getRestaurantByAdmin(admin.id);
+        if (!restaurant) return { days: [] };
+        const restaurantEmployees = await getEmployeesByRestaurant(restaurant.id);
+        const employeeIds = restaurantEmployees.map((e) => e.id);
+        if (employeeIds.length === 0) return { days: [] };
+        const nameById = new Map(restaurantEmployees.map((e) => [e.id, e.name]));
+        const db = await getDb();
+        if (!db) return { days: [] };
+        const { start: rangeStartStr, end: rangeEndStr } = calendarMonthRange(input.year, input.month);
+        const rows = await db
+          .select()
+          .from(timeOffRequests)
+          .where(
+            and(
+              inArray(timeOffRequests.employeeId, employeeIds),
+              lte(timeOffRequests.startDate, rangeEndStr),
+              gte(timeOffRequests.endDate, rangeStartStr)
+            )
+          );
+        const dayMap = new Map<
+          string,
+          { employeeName: string; kind: string; status: string; requestId: number }[]
+        >();
+        for (const r of rows) {
+          const startStr =
+            typeof r.startDate === "string"
+              ? r.startDate
+              : format(r.startDate as Date, "yyyy-MM-dd");
+          const endStr =
+            typeof r.endDate === "string" ? r.endDate : format(r.endDate as Date, "yyyy-MM-dd");
+          const sliceStart = startStr > rangeStartStr ? startStr : rangeStartStr;
+          const sliceEnd = endStr < rangeEndStr ? endStr : rangeEndStr;
+          for (const key of listDatesInclusive(sliceStart, sliceEnd)) {
+            const list = dayMap.get(key) ?? [];
+            list.push({
+              employeeName: nameById.get(r.employeeId) ?? "—",
+              kind: r.kind,
+              status: r.status,
+              requestId: r.id,
+            });
+            dayMap.set(key, list);
+          }
+        }
+        const days = Array.from(dayMap.entries())
+          .map(([date, entries]) => ({ date, entries }))
+          .sort((a, b) => a.date.localeCompare(b.date));
+        return { days };
+      }),
 
     pushNotifications: router({
       getVapidPublicKey: publicProcedure.query(() => {

@@ -16,6 +16,8 @@ import { relations } from "drizzle-orm";
 export const userRoleEnum = pgEnum("user_role", ["employee", "admin"]);
 export const incidentTypeEnum = pgEnum("incident_type", ["late_arrival", "early_exit", "other"]);
 export const incidentStatusEnum = pgEnum("incident_status", ["pending", "approved", "rejected"]);
+export const timeOffKindEnum = pgEnum("time_off_kind", ["vacation", "day_off"]);
+export const timeOffStatusEnum = pgEnum("time_off_status", ["pending", "approved", "rejected"]);
 
 /**
  * Core user table backing auth flow.
@@ -159,3 +161,22 @@ export type InsertNotificationLog = typeof notificationLogs.$inferInsert;
 
 export type Incident = typeof incidents.$inferSelect;
 export type InsertIncident = typeof incidents.$inferInsert;
+
+/**
+ * Solicitudes de vacaciones o días libres (empleado → admin aprueba/deniega).
+ */
+export const timeOffRequests = pgTable("time_off_requests", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employeeId").notNull(),
+  kind: timeOffKindEnum("kind").notNull(),
+  startDate: date("startDate").notNull(),
+  endDate: date("endDate").notNull(),
+  comment: text("comment").notNull(),
+  status: timeOffStatusEnum("status").default("pending").notNull(),
+  reviewedAt: timestamp("reviewedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull().$onUpdate(() => new Date()),
+});
+
+export type TimeOffRequest = typeof timeOffRequests.$inferSelect;
+export type InsertTimeOffRequest = typeof timeOffRequests.$inferInsert;

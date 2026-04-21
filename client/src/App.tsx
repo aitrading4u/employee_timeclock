@@ -16,6 +16,7 @@ import EmployeeIncident from "./pages/EmployeeIncident";
 import EmployeeCalendar from "./pages/EmployeeCalendar";
 import EmployeeCalculator from "./pages/EmployeeCalculator";
 import EmployeeSchedule from "./pages/EmployeeSchedule";
+import EmployeeTimeOff from "./pages/EmployeeTimeOff";
 import AdminDashboard from "./pages/AdminDashboard";
 
 function Router() {
@@ -29,6 +30,7 @@ function Router() {
       <Route path={"/employee/schedule"} component={EmployeeSchedule} />
       <Route path={"/employee/calculator"} component={EmployeeCalculator} />
       <Route path={"/employee/incident"} component={EmployeeIncident} />
+      <Route path={"/employee/time-off"} component={EmployeeTimeOff} />
       <Route path={"/admin"} component={AdminDashboard} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}

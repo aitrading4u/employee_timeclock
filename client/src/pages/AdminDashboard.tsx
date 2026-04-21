@@ -1,14 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, MapPin, Users, Calendar, AlertCircle, Clock3 } from 'lucide-react';
+import { LogOut, MapPin, Users, Calendar, AlertCircle, Clock3, Palmtree } from 'lucide-react';
 import { toast } from 'sonner';
 import RestaurantMap from '@/components/RestaurantMap';
 import { trpc } from '@/lib/trpc';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { Calendar as UiCalendar, CalendarDayButton } from '@/components/ui/calendar';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 
 const createEmptySchedule = () => ({
   monday: { entry1: '', entry2: '', isActive: true },
@@ -23,6 +26,7 @@ const createEmptySchedule = () => ({
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState('restaurant');
+  const [timeOffCalMonth, setTimeOffCalMonth] = useState(() => new Date());
   
   // Restaurant form state
   const [restaurantName, setRestaurantName] = useState('');
@@ -172,6 +176,32 @@ export default function AdminDashboard() {
   const sendTestNotification = trpc.publicApi.sendTestNotification.useMutation();
   const clearAllTimeclocks = trpc.publicApi.clearAllTimeclocks.useMutation();
   const clearAllIncidents = trpc.publicApi.clearAllIncidents.useMutation();
+  const timeOffPendingQuery = trpc.publicApi.listTimeOffRequests.useQuery(
+    { username: adminUsername, password: adminPassword, status: 'pending' },
+    { enabled: Boolean(adminUsername && adminPassword) }
+  );
+  const timeOffAllQuery = trpc.publicApi.listTimeOffRequests.useQuery(
+    { username: adminUsername, password: adminPassword, status: 'all' },
+    { enabled: Boolean(adminUsername && adminPassword) }
+  );
+  const timeOffCalendarQuery = trpc.publicApi.getTimeOffCalendarMonth.useQuery(
+    {
+      username: adminUsername,
+      password: adminPassword,
+      year: timeOffCalMonth.getFullYear(),
+      month: timeOffCalMonth.getMonth() + 1,
+    },
+    { enabled: Boolean(adminUsername && adminPassword) }
+  );
+  const decideTimeOff = trpc.publicApi.decideTimeOffRequest.useMutation({
+    onSuccess: () => {
+      toast.success('Solicitud actualizada');
+      void timeOffPendingQuery.refetch();
+      void timeOffAllQuery.refetch();
+      void timeOffCalendarQuery.refetch();
+    },
+    onError: () => toast.error('No se pudo actualizar la solicitud'),
+  });
 
   const filteredTimeclocks = (timeclocksQuery.data || [])
     .filter((entry) =>
@@ -196,6 +226,28 @@ export default function AdminDashboard() {
   const employeeNameById = new Map(
     (listEmployees.data || []).map((employee) => [employee.id, employee.name])
   );
+
+  const timeOffCellApproved = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const day of timeOffCalendarQuery.data?.days ?? []) {
+      const names = Array.from(
+        new Set(day.entries.filter((e) => e.status === 'approved').map((e) => e.employeeName))
+      );
+      if (names.length) m.set(day.date, names.join(', '));
+    }
+    return m;
+  }, [timeOffCalendarQuery.data?.days]);
+
+  const timeOffCellPending = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const day of timeOffCalendarQuery.data?.days ?? []) {
+      const names = Array.from(
+        new Set(day.entries.filter((e) => e.status === 'pending').map((e) => e.employeeName))
+      );
+      if (names.length) m.set(day.date, names.join(', '));
+    }
+    return m;
+  }, [timeOffCalendarQuery.data?.days]);
 
   const totalHours = filteredTimeclocks.reduce((total, entry) => {
     if (!entry.entryTime || !entry.exitTime) return total;
@@ -605,7 +657,7 @@ export default function AdminDashboard() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 mb-8">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-8">
             <TabsTrigger value="restaurant" className="flex items-center gap-2">
               <MapPin className="w-4 h-4" />
               <span className="hidden sm:inline">Restaurante</span>
@@ -621,6 +673,10 @@ export default function AdminDashboard() {
             <TabsTrigger value="shifts" className="flex items-center gap-2">
               <Clock3 className="w-4 h-4" />
               <span className="hidden sm:inline">Turnos</span>
+            </TabsTrigger>
+            <TabsTrigger value="timeoff" className="flex items-center gap-2">
+              <Palmtree className="w-4 h-4" />
+              <span className="hidden sm:inline">Vacaciones</span>
             </TabsTrigger>
             <TabsTrigger value="incidents" className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />
@@ -1320,6 +1376,162 @@ export default function AdminDashboard() {
                   </p>
                 </div>
               </div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="timeoff" className="space-y-6">
+            <Card className="p-6">
+              <h2 className="text-2xl font-bold text-foreground mb-2">Vacaciones y días libres</h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                Revisa las solicitudes pendientes. En el calendario, los días aprobados aparecen en verde con el
+                nombre del empleado; los pendientes de revisar, en ámbar.
+              </p>
+
+              <h3 className="text-lg font-semibold text-foreground mb-3">Solicitudes pendientes</h3>
+              {(timeOffPendingQuery.data || []).length === 0 ? (
+                <p className="text-sm text-muted-foreground mb-8">No hay solicitudes pendientes.</p>
+              ) : (
+                <div className="space-y-4 mb-8">
+                  {(timeOffPendingQuery.data || []).map((row) => (
+                    <div key={row.id} className="rounded-lg border border-border p-4 space-y-2">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold text-foreground">{row.employeeName}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {row.kind === 'vacation' ? 'Vacaciones' : 'Día(s) libre(s)'} ·{' '}
+                            {String(row.startDate)} → {String(row.endDate)}
+                          </p>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            disabled={decideTimeOff.isPending}
+                            onClick={() =>
+                              decideTimeOff.mutate({
+                                username: adminUsername,
+                                password: adminPassword,
+                                requestId: row.id,
+                                decision: 'approved',
+                              })
+                            }
+                          >
+                            Aprobar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={decideTimeOff.isPending}
+                            onClick={() =>
+                              decideTimeOff.mutate({
+                                username: adminUsername,
+                                password: adminPassword,
+                                requestId: row.id,
+                                decision: 'rejected',
+                              })
+                            }
+                          >
+                            Denegar
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-sm text-foreground whitespace-pre-wrap border-t border-border pt-2">
+                        {row.comment}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <h3 className="text-lg font-semibold text-foreground mb-2">Historial en calendario</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Leyenda: verde = aprobado (día cogido) · ámbar = pendiente de revisar
+              </p>
+              <div className="flex justify-center overflow-x-auto pb-4">
+                <UiCalendar
+                  mode="single"
+                  selected={undefined}
+                  onSelect={() => {}}
+                  month={timeOffCalMonth}
+                  onMonthChange={setTimeOffCalMonth}
+                  className="rounded-lg border border-border [--cell-size:2.75rem] sm:[--cell-size:3.25rem]"
+                  components={{
+                    DayButton: (props) => {
+                      const key = format(props.day.date, 'yyyy-MM-dd');
+                      const approved = timeOffCellApproved.get(key);
+                      const pending = timeOffCellPending.get(key);
+                      return (
+                        <CalendarDayButton
+                          {...props}
+                          className={cn(
+                            props.className,
+                            approved &&
+                              '!bg-emerald-200 dark:!bg-emerald-900/55 hover:!bg-emerald-300 dark:hover:!bg-emerald-800/55',
+                            !approved &&
+                              pending &&
+                              '!bg-amber-100 dark:!bg-amber-900/40 hover:!bg-amber-200 dark:hover:!bg-amber-800/40'
+                          )}
+                        >
+                          <span className="text-sm font-medium leading-none">
+                            {props.day.date.getDate()}
+                          </span>
+                          {approved ? (
+                            <span className="text-[0.55rem] leading-tight line-clamp-3 w-full px-0.5 font-medium text-emerald-950 dark:text-emerald-50">
+                              {approved}
+                            </span>
+                          ) : pending ? (
+                            <span className="text-[0.55rem] leading-tight line-clamp-2 w-full px-0.5 text-amber-950 dark:text-amber-50">
+                              {pending}
+                              <span className="block opacity-80">(pend.)</span>
+                            </span>
+                          ) : null}
+                        </CalendarDayButton>
+                      );
+                    },
+                  }}
+                />
+              </div>
+              {timeOffCalendarQuery.isFetching ? (
+                <p className="text-center text-xs text-muted-foreground">Actualizando calendario…</p>
+              ) : null}
+
+              <h3 className="text-lg font-semibold text-foreground mt-8 mb-3">Historial de solicitudes</h3>
+              {(timeOffAllQuery.data || []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No hay solicitudes.</p>
+              ) : (
+                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                  {(timeOffAllQuery.data || []).map((row) => (
+                    <div
+                      key={row.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm"
+                    >
+                      <div>
+                        <span className="font-medium text-foreground">{row.employeeName}</span>
+                        <span className="text-muted-foreground">
+                          {' '}
+                          · {row.kind === 'vacation' ? 'Vacaciones' : 'Libre'} · {String(row.startDate)} →{' '}
+                          {String(row.endDate)}
+                        </span>
+                      </div>
+                      <span
+                        className={
+                          row.status === 'approved'
+                            ? 'text-green-600 dark:text-green-400 font-medium'
+                            : row.status === 'rejected'
+                              ? 'text-red-600 dark:text-red-400 font-medium'
+                              : 'text-amber-600 dark:text-amber-400 font-medium'
+                        }
+                      >
+                        {row.status === 'approved'
+                          ? 'Aprobada'
+                          : row.status === 'rejected'
+                            ? 'Denegada'
+                            : 'Pendiente'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
           </TabsContent>
 
