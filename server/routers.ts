@@ -1020,12 +1020,9 @@ export const appRouter = router({
         }
         const db = await getDb();
         if (!db) throw new Error("Database not available");
+        // `select({ ... })` parcial provocaba fallos en postgres.js; mismo patrón que listMyTimeOffRequests.
         const existingRequests = await db
-          .select({
-            status: timeOffRequests.status,
-            startDate: timeOffRequests.startDate,
-            endDate: timeOffRequests.endDate,
-          })
+          .select()
           .from(timeOffRequests)
           .where(eq(timeOffRequests.employeeId, input.employeeId));
 
