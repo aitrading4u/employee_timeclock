@@ -33,7 +33,7 @@ import {
   notificationLogs,
   timeOffRequests,
 } from "../drizzle/schema";
-import { eq, and, desc, inArray, sql, or } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { format } from "date-fns";
 
 function pad2(n: number): string {
@@ -1020,20 +1020,29 @@ export const appRouter = router({
         }
         const db = await getDb();
         if (!db) throw new Error("Database not available");
-        const conflicts = await db
-          .select({ id: timeOffRequests.id })
+        const existingRequests = await db
+          .select({
+            status: timeOffRequests.status,
+            startDate: timeOffRequests.startDate,
+            endDate: timeOffRequests.endDate,
+          })
           .from(timeOffRequests)
-          .where(
-            and(
-              eq(timeOffRequests.employeeId, input.employeeId),
-              or(eq(timeOffRequests.status, "pending"), eq(timeOffRequests.status, "approved")),
-              // PG date vs driver text: comparar como texto ISO evita error de operador
-              sql`${timeOffRequests.startDate}::text <= ${input.endDate}`,
-              sql`${timeOffRequests.endDate}::text >= ${input.startDate}`
-            )
-          )
-          .limit(1);
-        if (conflicts.length > 0) {
+          .where(eq(timeOffRequests.employeeId, input.employeeId));
+
+        const hasConflict = existingRequests.some((row) => {
+          if (row.status !== "pending" && row.status !== "approved") return false;
+          const rowStart =
+            typeof row.startDate === "string"
+              ? row.startDate
+              : format(row.startDate as Date, "yyyy-MM-dd");
+          const rowEnd =
+            typeof row.endDate === "string"
+              ? row.endDate
+              : format(row.endDate as Date, "yyyy-MM-dd");
+          return rowStart <= input.endDate && rowEnd >= input.startDate;
+        });
+
+        if (hasConflict) {
           throw new Error(
             "Las fechas se solapan con otra solicitud tuya pendiente o ya aprobada. Elige otros días."
           );
