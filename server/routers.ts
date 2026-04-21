@@ -1091,8 +1091,44 @@ export const appRouter = router({
         if (!row || row.employeeId !== input.employeeId) {
           throw new Error("Solicitud no encontrada");
         }
-        if (row.status !== "pending") {
-          throw new Error("Solo se pueden borrar solicitudes pendientes de revisión");
+        if (row.status !== "pending" && row.status !== "approved") {
+          throw new Error("Solo puedes anular solicitudes pendientes o ya aprobadas");
+        }
+        await db.delete(timeOffRequests).where(eq(timeOffRequests.id, input.requestId));
+        return { success: true };
+      }),
+
+    adminDeleteTimeOffRequest: publicProcedure
+      .input(
+        z.object({
+          username: z.string().min(1),
+          password: z.string().min(1),
+          requestId: z.number(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const adminUsername = process.env.ADMIN_USERNAME ?? "ilbandito";
+        const adminPassword = process.env.ADMIN_PASSWORD ?? "Vat1stop";
+        if (input.username !== adminUsername || input.password !== adminPassword) {
+          throw new Error("Invalid admin credentials");
+        }
+        const admin = await getOrCreateLocalAdmin(input.username);
+        if (!admin) throw new Error("Admin not available");
+        const restaurant = await getRestaurantByAdmin(admin.id);
+        if (!restaurant) throw new Error("Restaurant not found");
+        const restaurantEmployees = await getEmployeesByRestaurant(restaurant.id);
+        const employeeIds = new Set(restaurantEmployees.map((e) => e.id));
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const [row] = await db
+          .select()
+          .from(timeOffRequests)
+          .where(eq(timeOffRequests.id, input.requestId))
+          .limit(1);
+        if (!row) throw new Error("Solicitud no encontrada");
+        if (!employeeIds.has(row.employeeId)) throw new Error("No autorizado");
+        if (row.status !== "pending" && row.status !== "approved") {
+          throw new Error("Solo se pueden anular solicitudes pendientes o aprobadas");
         }
         await db.delete(timeOffRequests).where(eq(timeOffRequests.id, input.requestId));
         return { success: true };

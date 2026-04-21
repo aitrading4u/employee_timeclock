@@ -202,6 +202,15 @@ export default function AdminDashboard() {
     },
     onError: () => toast.error('No se pudo actualizar la solicitud'),
   });
+  const adminDeleteTimeOff = trpc.publicApi.adminDeleteTimeOffRequest.useMutation({
+    onSuccess: () => {
+      toast.success('Solicitud anulada');
+      void timeOffPendingQuery.refetch();
+      void timeOffAllQuery.refetch();
+      void timeOffCalendarQuery.refetch();
+    },
+    onError: () => toast.error('No se pudo anular la solicitud'),
+  });
 
   const filteredTimeclocks = (timeclocksQuery.data || [])
     .filter((entry) =>
@@ -1539,21 +1548,46 @@ export default function AdminDashboard() {
                           {String(row.endDate)}
                         </span>
                       </div>
-                      <span
-                        className={
-                          row.status === 'approved'
-                            ? 'text-green-600 dark:text-green-400 font-medium'
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={
+                            row.status === 'approved'
+                              ? 'text-green-600 dark:text-green-400 font-medium'
+                              : row.status === 'rejected'
+                                ? 'text-red-600 dark:text-red-400 font-medium'
+                                : 'text-amber-600 dark:text-amber-400 font-medium'
+                          }
+                        >
+                          {row.status === 'approved'
+                            ? 'Aprobada'
                             : row.status === 'rejected'
-                              ? 'text-red-600 dark:text-red-400 font-medium'
-                              : 'text-amber-600 dark:text-amber-400 font-medium'
-                        }
-                      >
-                        {row.status === 'approved'
-                          ? 'Aprobada'
-                          : row.status === 'rejected'
-                            ? 'Denegada'
-                            : 'Pendiente'}
-                      </span>
+                              ? 'Denegada'
+                              : 'Pendiente'}
+                        </span>
+                        {row.status === 'approved' || row.status === 'pending' ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-destructive border-destructive/40 hover:bg-destructive/10"
+                            disabled={adminDeleteTimeOff.isPending}
+                            onClick={() => {
+                              const msg =
+                                row.status === 'approved'
+                                  ? `¿Anular la aprobación de ${row.employeeName} (${String(row.startDate)} → ${String(row.endDate)})? Se borrará el registro.`
+                                  : `¿Eliminar la solicitud pendiente de ${row.employeeName}?`;
+                              if (!window.confirm(msg)) return;
+                              adminDeleteTimeOff.mutate({
+                                username: adminUsername,
+                                password: adminPassword,
+                                requestId: row.id,
+                              });
+                            }}
+                          >
+                            Anular
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>

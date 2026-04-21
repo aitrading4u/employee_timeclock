@@ -134,9 +134,13 @@ export default function EmployeeTimeOff() {
     }
   };
 
-  const handleDeleteRequest = async (requestId: number) => {
+  const handleDeleteRequest = async (requestId: number, status: string) => {
     if (!employeeAuth) return;
-    const ok = window.confirm("¿Borrar esta solicitud pendiente? No podrás deshacerlo.");
+    const msg =
+      status === "approved"
+        ? "¿Anular esta solicitud ya aprobada? Los días dejarán de figurar como libres y no podrás deshacerlo."
+        : "¿Borrar esta solicitud pendiente? No podrás deshacerlo.";
+    const ok = window.confirm(msg);
     if (!ok) return;
     try {
       await deleteMutation.mutateAsync({
@@ -145,7 +149,7 @@ export default function EmployeeTimeOff() {
         employeeId: employeeAuth.employeeId,
         requestId,
       });
-      toast.success("Solicitud eliminada");
+      toast.success(status === "approved" ? "Solicitud aprobada anulada" : "Solicitud eliminada");
       await listQuery.refetch();
     } catch (err) {
       toast.error(getErrorMessage(err, "No se pudo borrar la solicitud"));
@@ -288,15 +292,19 @@ export default function EmployeeTimeOff() {
                       >
                         {statusLabels[row.status] ?? row.status}
                       </span>
-                      {row.status === "pending" ? (
+                      {row.status === "pending" || row.status === "approved" ? (
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           className="h-8 px-2 text-destructive border-destructive/40 hover:bg-destructive/10"
                           disabled={deleteMutation.isPending}
-                          onClick={() => handleDeleteRequest(row.id)}
-                          title="Borrar solicitud"
+                          onClick={() => handleDeleteRequest(row.id, row.status)}
+                          title={
+                            row.status === "approved"
+                              ? "Anular solicitud aprobada"
+                              : "Borrar solicitud pendiente"
+                          }
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
