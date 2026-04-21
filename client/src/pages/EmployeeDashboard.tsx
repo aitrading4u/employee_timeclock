@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Clock, LogOut, Calendar, Calculator, AlertCircle, CalendarDays, Palmtree } from 'lucide-react';
+import { Clock, LogOut, Calendar, AlertCircle, CalendarDays, Palmtree } from 'lucide-react';
 import { toast } from 'sonner';
 import { trpc } from '@/lib/trpc';
 import { useAuthContext } from '@/contexts/AuthContext';
+import EmployeeBottomMenu from '@/components/EmployeeBottomMenu';
 
 const LATE_CUTOFF_HOUR = 9;
 const LATE_CUTOFF_MINUTE = 0;
@@ -514,7 +515,7 @@ export default function EmployeeDashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="container py-8">
+      <main className="container py-8 pb-28 md:pb-8">
         {/* Time Display */}
         <div className="mb-8 text-center">
           <div className="text-5xl font-bold text-foreground mb-2">
@@ -583,7 +584,7 @@ export default function EmployeeDashboard() {
         </Button>
 
         {/* Quick Links */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="hidden md:grid md:grid-cols-3 gap-4">
           <Card
             className="p-6 hover:shadow-md transition-shadow cursor-pointer"
             onClick={() => setLocation('/employee/time-off')}
@@ -635,6 +636,8 @@ export default function EmployeeDashboard() {
           </p>
         </div>
       </main>
+
+      <EmployeeBottomMenu />
     </div>
   );
 }

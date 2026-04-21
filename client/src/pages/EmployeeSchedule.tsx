@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, CalendarDays } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAuthContext } from "@/contexts/AuthContext";
+import EmployeeBottomMenu from "@/components/EmployeeBottomMenu";
 
 const scheduleDays = [
   { key: "monday", label: "Lunes" },
@@ -75,7 +76,7 @@ export default function EmployeeSchedule() {
         </div>
       </header>
 
-      <main className="container py-8">
+      <main className="container py-8 pb-28">
         <Card className="p-6">
           <h2 className="text-2xl font-bold text-foreground mb-2">Calendario semanal de turnos</h2>
           <p className="text-sm text-muted-foreground mb-6">
@@ -92,6 +93,7 @@ export default function EmployeeSchedule() {
           </div>
         </Card>
       </main>
+      <EmployeeBottomMenu />
     </div>
   );
 }

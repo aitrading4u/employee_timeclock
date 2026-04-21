@@ -7,6 +7,7 @@ import { ArrowLeft, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "
 import { addDays, format } from "date-fns";
 import { trpc } from "@/lib/trpc";
 import { useAuthContext } from "@/contexts/AuthContext";
+import EmployeeBottomMenu from "@/components/EmployeeBottomMenu";
 
 export default function EmployeeCalendar() {
   const [, setLocation] = useLocation();
@@ -78,7 +79,7 @@ export default function EmployeeCalendar() {
         </div>
       </header>
 
-      <main className="container py-8">
+      <main className="container py-8 pb-28">
         <Card className="p-6 max-w-3xl mx-auto">
           <div className="grid gap-6 md:grid-cols-[auto,1fr] items-start">
             <div className="space-y-4">
@@ -262,6 +263,7 @@ export default function EmployeeCalendar() {
           </div>
         </Card>
       </main>
+      <EmployeeBottomMenu />
     </div>
   );
 }

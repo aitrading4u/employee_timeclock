@@ -8,6 +8,7 @@ import { ArrowLeft, Palmtree, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAuthContext } from "@/contexts/AuthContext";
+import EmployeeBottomMenu from "@/components/EmployeeBottomMenu";
 
 const kindLabels: Record<string, string> = {
   vacation: "Vacaciones",
@@ -177,7 +178,7 @@ export default function EmployeeTimeOff() {
         </div>
       </header>
 
-      <main className="container py-8 max-w-2xl mx-auto space-y-8">
+      <main className="container py-8 pb-28 max-w-2xl mx-auto space-y-8">
         <Card className="p-6">
           <h2 className="text-lg font-semibold text-foreground mb-4">Nueva solicitud</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -321,6 +322,7 @@ export default function EmployeeTimeOff() {
           )}
         </Card>
       </main>
+      <EmployeeBottomMenu />
     </div>
   );
 }
