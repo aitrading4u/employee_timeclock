@@ -12,6 +12,9 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { Calendar as UiCalendar, CalendarDayButton } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const createEmptySchedule = () => ({
   monday: { entry1: '', entry2: '', isActive: true },
@@ -257,6 +260,253 @@ export default function AdminDashboard() {
     }
     return m;
   }, [timeOffCalendarQuery.data?.days]);
+
+  const getRangeBounds = () => {
+    const start = rangeStart ? new Date(rangeStart) : null;
+    if (start) start.setHours(0, 0, 0, 0);
+    const end = rangeEnd ? new Date(rangeEnd) : null;
+    if (end) end.setHours(23, 59, 59, 999);
+    return { start, end };
+  };
+
+  const isDateInsideSelectedRange = (value?: string | Date | null) => {
+    if (!rangeStart && !rangeEnd) return true;
+    if (!value) return false;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return false;
+    const { start, end } = getRangeBounds();
+    if (start && d < start) return false;
+    if (end && d > end) return false;
+    return true;
+  };
+
+  const toYmd = (value?: string | Date | null) => {
+    if (!value) return '';
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return format(d, 'yyyy-MM-dd');
+  };
+
+  const rangeStartYmd = rangeStart || '';
+  const rangeEndYmd = rangeEnd || '';
+
+  const filteredIncidentsForReport = (listIncidents.data || [])
+    .filter((incident) =>
+      selectedEmployeeId ? String(incident.employeeId) === selectedEmployeeId : true
+    )
+    .filter((incident) => isDateInsideSelectedRange(incident.createdAt));
+
+  const filteredTimeOffForReport = (timeOffAllQuery.data || [])
+    .filter((row) =>
+      selectedEmployeeId ? String(row.employeeId) === selectedEmployeeId : true
+    )
+    .filter((row) => {
+      const rowStart = toYmd(row.startDate);
+      const rowEnd = toYmd(row.endDate);
+      if (!rowStart || !rowEnd) return false;
+      if (!rangeStartYmd && !rangeEndYmd) return true;
+      if (rangeStartYmd && rowEnd < rangeStartYmd) return false;
+      if (rangeEndYmd && rowStart > rangeEndYmd) return false;
+      return true;
+    });
+
+  const hasReportData =
+    filteredTimeclocks.length > 0 ||
+    filteredTimeOffForReport.length > 0 ||
+    filteredIncidentsForReport.length > 0;
+
+  const reportContextLabel = () => {
+    const employeeLabel = selectedEmployeeId
+      ? employeeNameById.get(Number(selectedEmployeeId)) || `Empleado #${selectedEmployeeId}`
+      : 'Todos los empleados';
+    const rangeLabel =
+      rangeStart || rangeEnd
+        ? `${rangeStart || 'Inicio'} → ${rangeEnd || 'Hoy'}`
+        : 'Sin filtro de fechas';
+    return { employeeLabel, rangeLabel };
+  };
+
+  const exportReportsToExcel = () => {
+    if (!hasReportData) {
+      toast.error('No hay datos para exportar con los filtros actuales');
+      return;
+    }
+
+    const { employeeLabel, rangeLabel } = reportContextLabel();
+    const wb = XLSX.utils.book_new();
+
+    const timeclockRows = filteredTimeclocks.map((entry) => ({
+      Empleado: employeeNameById.get(entry.employeeId) || `#${entry.employeeId}`,
+      Entrada: entry.entryTime ? new Date(entry.entryTime).toLocaleString('es-ES') : '',
+      Salida: entry.exitTime ? new Date(entry.exitTime).toLocaleString('es-ES') : 'Pendiente',
+      Horas:
+        entry.entryTime && entry.exitTime
+          ? (
+              (new Date(entry.exitTime).getTime() - new Date(entry.entryTime).getTime()) /
+              (1000 * 60 * 60)
+            ).toFixed(2)
+          : '',
+      Estado: entry.isLate ? 'Tarde' : 'OK',
+    }));
+
+    const timeOffRows = filteredTimeOffForReport.map((row) => ({
+      Empleado: row.employeeName || employeeNameById.get(row.employeeId) || `#${row.employeeId}`,
+      Tipo: row.kind === 'vacation' ? 'Vacaciones' : 'Día libre',
+      Desde: toYmd(row.startDate),
+      Hasta: toYmd(row.endDate),
+      Estado:
+        row.status === 'approved' ? 'Aprobada' : row.status === 'rejected' ? 'Denegada' : 'Pendiente',
+      Comentario: row.comment || '',
+      Creada: row.createdAt ? new Date(row.createdAt).toLocaleString('es-ES') : '',
+    }));
+
+    const incidentRows = filteredIncidentsForReport.map((incident) => ({
+      Empleado: employeeNameById.get(incident.employeeId) || `#${incident.employeeId}`,
+      Tipo:
+        incident.type === 'late_arrival'
+          ? 'Retraso entrada'
+          : incident.type === 'early_exit'
+          ? 'Salida temprana'
+          : 'Otra',
+      Estado:
+        incident.status === 'approved'
+          ? 'Aprobada'
+          : incident.status === 'rejected'
+          ? 'Denegada'
+          : 'Pendiente',
+      Motivo: incident.reason,
+      Fecha: incident.createdAt ? new Date(incident.createdAt).toLocaleString('es-ES') : '',
+    }));
+
+    const summarySheet = XLSX.utils.json_to_sheet([
+      {
+        Empleado: employeeLabel,
+        Rango: rangeLabel,
+        Fichajes: filteredTimeclocks.length,
+        Vacaciones_o_libres: filteredTimeOffForReport.length,
+        Incidencias: filteredIncidentsForReport.length,
+        Total_horas: totalHours.toFixed(2),
+      },
+    ]);
+    XLSX.utils.book_append_sheet(wb, summarySheet, 'Resumen');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(timeclockRows), 'Horas');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(timeOffRows), 'Vacaciones');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(incidentRows), 'Incidencias');
+
+    const stamp = format(new Date(), 'yyyyMMdd_HHmm');
+    XLSX.writeFile(wb, `reporte_horas_vacaciones_incidencias_${stamp}.xlsx`);
+    toast.success('Reporte Excel descargado');
+  };
+
+  const exportReportsToPdf = () => {
+    if (!hasReportData) {
+      toast.error('No hay datos para exportar con los filtros actuales');
+      return;
+    }
+
+    const { employeeLabel, rangeLabel } = reportContextLabel();
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const generatedAt = new Date().toLocaleString('es-ES');
+
+    doc.setFontSize(14);
+    doc.text('Reporte de horas, vacaciones e incidencias', 14, 14);
+    doc.setFontSize(10);
+    doc.text(`Empleado: ${employeeLabel}`, 14, 21);
+    doc.text(`Rango: ${rangeLabel}`, 14, 27);
+    doc.text(`Generado: ${generatedAt}`, 14, 33);
+
+    autoTable(doc, {
+      startY: 38,
+      head: [['Fichajes', 'Total horas', 'Vacaciones/libres', 'Incidencias']],
+      body: [[
+        String(filteredTimeclocks.length),
+        totalHours.toFixed(2),
+        String(filteredTimeOffForReport.length),
+        String(filteredIncidentsForReport.length),
+      ]],
+      styles: { fontSize: 9 },
+    });
+
+    doc.addPage();
+    doc.setFontSize(12);
+    doc.text('Horas', 14, 14);
+    autoTable(doc, {
+      startY: 18,
+      head: [['Empleado', 'Entrada', 'Salida', 'Horas', 'Estado']],
+      body:
+        filteredTimeclocks.length > 0
+          ? filteredTimeclocks.map((entry) => [
+              employeeNameById.get(entry.employeeId) || `#${entry.employeeId}`,
+              entry.entryTime ? new Date(entry.entryTime).toLocaleString('es-ES') : '',
+              entry.exitTime ? new Date(entry.exitTime).toLocaleString('es-ES') : 'Pendiente',
+              entry.entryTime && entry.exitTime
+                ? (
+                    (new Date(entry.exitTime).getTime() - new Date(entry.entryTime).getTime()) /
+                    (1000 * 60 * 60)
+                  ).toFixed(2)
+                : '',
+              entry.isLate ? 'Tarde' : 'OK',
+            ])
+          : [['Sin datos', '', '', '', '']],
+      styles: { fontSize: 8 },
+    });
+
+    doc.addPage();
+    doc.setFontSize(12);
+    doc.text('Vacaciones / días libres', 14, 14);
+    autoTable(doc, {
+      startY: 18,
+      head: [['Empleado', 'Tipo', 'Desde', 'Hasta', 'Estado', 'Comentario']],
+      body:
+        filteredTimeOffForReport.length > 0
+          ? filteredTimeOffForReport.map((row) => [
+              row.employeeName || employeeNameById.get(row.employeeId) || `#${row.employeeId}`,
+              row.kind === 'vacation' ? 'Vacaciones' : 'Día libre',
+              toYmd(row.startDate),
+              toYmd(row.endDate),
+              row.status === 'approved'
+                ? 'Aprobada'
+                : row.status === 'rejected'
+                ? 'Denegada'
+                : 'Pendiente',
+              row.comment || '',
+            ])
+          : [['Sin datos', '', '', '', '', '']],
+      styles: { fontSize: 8 },
+    });
+
+    doc.addPage();
+    doc.setFontSize(12);
+    doc.text('Incidencias', 14, 14);
+    autoTable(doc, {
+      startY: 18,
+      head: [['Empleado', 'Tipo', 'Estado', 'Motivo', 'Fecha']],
+      body:
+        filteredIncidentsForReport.length > 0
+          ? filteredIncidentsForReport.map((incident) => [
+              employeeNameById.get(incident.employeeId) || `#${incident.employeeId}`,
+              incident.type === 'late_arrival'
+                ? 'Retraso entrada'
+                : incident.type === 'early_exit'
+                ? 'Salida temprana'
+                : 'Otra',
+              incident.status === 'approved'
+                ? 'Aprobada'
+                : incident.status === 'rejected'
+                ? 'Denegada'
+                : 'Pendiente',
+              incident.reason || '',
+              incident.createdAt ? new Date(incident.createdAt).toLocaleString('es-ES') : '',
+            ])
+          : [['Sin datos', '', '', '', '']],
+      styles: { fontSize: 8 },
+    });
+
+    const stamp = format(new Date(), 'yyyyMMdd_HHmm');
+    doc.save(`reporte_horas_vacaciones_incidencias_${stamp}.pdf`);
+    toast.success('Reporte PDF descargado');
+  };
 
   const totalHours = filteredTimeclocks.reduce((total, entry) => {
     if (!entry.entryTime || !entry.exitTime) return total;
@@ -1118,6 +1368,22 @@ export default function AdminDashboard() {
                     disabled={clearAllTimeclocks.isPending}
                   >
                     {clearAllTimeclocks.isPending ? "Borrando..." : "Borrar todas las horas"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={exportReportsToExcel}
+                    disabled={!hasReportData}
+                  >
+                    Exportar Excel (horas + vacaciones + incidencias)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={exportReportsToPdf}
+                    disabled={!hasReportData}
+                  >
+                    Exportar PDF (horas + vacaciones + incidencias)
                   </Button>
                 </div>
 
