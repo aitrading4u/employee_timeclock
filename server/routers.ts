@@ -33,7 +33,7 @@ import {
   notificationLogs,
   timeOffRequests,
 } from "../drizzle/schema";
-import { eq, and, desc, inArray, lte, gte } from "drizzle-orm";
+import { eq, and, desc, inArray, sql, or } from "drizzle-orm";
 import { format } from "date-fns";
 
 function pad2(n: number): string {
@@ -1026,9 +1026,10 @@ export const appRouter = router({
           .where(
             and(
               eq(timeOffRequests.employeeId, input.employeeId),
-              inArray(timeOffRequests.status, ["pending", "approved"]),
-              lte(timeOffRequests.startDate, input.endDate),
-              gte(timeOffRequests.endDate, input.startDate)
+              or(eq(timeOffRequests.status, "pending"), eq(timeOffRequests.status, "approved")),
+              // PG date vs driver text: comparar como texto ISO evita error de operador
+              sql`${timeOffRequests.startDate}::text <= ${input.endDate}`,
+              sql`${timeOffRequests.endDate}::text >= ${input.startDate}`
             )
           )
           .limit(1);
@@ -1273,8 +1274,8 @@ export const appRouter = router({
           .where(
             and(
               inArray(timeOffRequests.employeeId, employeeIds),
-              lte(timeOffRequests.startDate, rangeEndStr),
-              gte(timeOffRequests.endDate, rangeStartStr)
+              sql`${timeOffRequests.startDate}::text <= ${rangeEndStr}`,
+              sql`${timeOffRequests.endDate}::text >= ${rangeStartStr}`
             )
           );
         const dayMap = new Map<
