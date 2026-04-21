@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Palmtree } from "lucide-react";
+import { ArrowLeft, Palmtree, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAuthContext } from "@/contexts/AuthContext";
@@ -19,6 +19,14 @@ const statusLabels: Record<string, string> = {
   approved: "Aprobada",
   rejected: "Denegada",
 };
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = String((error as { message?: string }).message || "").trim();
+    if (message) return message;
+  }
+  return fallback;
+}
 
 export default function EmployeeTimeOff() {
   const [, setLocation] = useLocation();
@@ -43,6 +51,7 @@ export default function EmployeeTimeOff() {
   );
 
   const createMutation = trpc.publicApi.createTimeOffRequest.useMutation();
+  const deleteMutation = trpc.publicApi.deleteMyTimeOffRequest.useMutation();
 
   useEffect(() => {
     if (!employeeAuth) {
@@ -85,10 +94,28 @@ export default function EmployeeTimeOff() {
       toast.success("Solicitud enviada. El administrador la revisará.");
       setComment("");
       await listQuery.refetch();
-    } catch {
-      toast.error("No se pudo enviar la solicitud");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "No se pudo enviar la solicitud"));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDeleteRequest = async (requestId: number) => {
+    if (!employeeAuth) return;
+    const ok = window.confirm("¿Borrar esta solicitud pendiente? No podrás deshacerlo.");
+    if (!ok) return;
+    try {
+      await deleteMutation.mutateAsync({
+        username: employeeAuth.username,
+        password: employeeAuth.password,
+        employeeId: employeeAuth.employeeId,
+        requestId,
+      });
+      toast.success("Solicitud eliminada");
+      await listQuery.refetch();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "No se pudo borrar la solicitud"));
     }
   };
 
@@ -183,17 +210,32 @@ export default function EmployeeTimeOff() {
                     <span className="font-medium text-foreground">
                       {kindLabels[row.kind] ?? row.kind}
                     </span>
-                    <span
-                      className={
-                        row.status === "approved"
-                          ? "text-green-600 dark:text-green-400"
-                          : row.status === "rejected"
-                            ? "text-red-600 dark:text-red-400"
-                            : "text-amber-600 dark:text-amber-400"
-                      }
-                    >
-                      {statusLabels[row.status] ?? row.status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={
+                          row.status === "approved"
+                            ? "text-green-600 dark:text-green-400"
+                            : row.status === "rejected"
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-amber-600 dark:text-amber-400"
+                        }
+                      >
+                        {statusLabels[row.status] ?? row.status}
+                      </span>
+                      {row.status === "pending" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2 text-destructive border-destructive/40 hover:bg-destructive/10"
+                          disabled={deleteMutation.isPending}
+                          onClick={() => handleDeleteRequest(row.id)}
+                          title="Borrar solicitud"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                   <p className="text-muted-foreground mt-1">
                     {String(row.startDate)} → {String(row.endDate)}

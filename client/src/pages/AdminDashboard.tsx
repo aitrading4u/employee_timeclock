@@ -657,32 +657,58 @@ export default function AdminDashboard() {
       {/* Main Content */}
       <main className="container py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-8">
-            <TabsTrigger value="restaurant" className="flex items-center gap-2">
-              <MapPin className="w-4 h-4" />
-              <span className="hidden sm:inline">Restaurante</span>
-            </TabsTrigger>
-            <TabsTrigger value="employees" className="flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Empleados</span>
-            </TabsTrigger>
-            <TabsTrigger value="hours" className="flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              <span className="hidden sm:inline">Horas</span>
-            </TabsTrigger>
-            <TabsTrigger value="shifts" className="flex items-center gap-2">
-              <Clock3 className="w-4 h-4" />
-              <span className="hidden sm:inline">Turnos</span>
-            </TabsTrigger>
-            <TabsTrigger value="timeoff" className="flex items-center gap-2">
-              <Palmtree className="w-4 h-4" />
-              <span className="hidden sm:inline">Vacaciones</span>
-            </TabsTrigger>
-            <TabsTrigger value="incidents" className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              <span className="hidden sm:inline">Incidencias</span>
-            </TabsTrigger>
-          </TabsList>
+          <div className="mb-8 -mx-4 overflow-x-auto overflow-y-hidden overscroll-x-contain px-4 pb-1 sm:mx-0 sm:px-0 [scrollbar-width:thin]">
+            <TabsList className="inline-flex h-auto min-h-10 w-max max-w-none flex-nowrap items-stretch justify-start gap-1 rounded-lg bg-muted p-1 text-muted-foreground sm:w-full sm:max-w-full sm:flex-wrap sm:justify-center md:flex-nowrap md:justify-center">
+              <TabsTrigger
+                value="restaurant"
+                className="flex shrink-0 grow-0 basis-auto items-center gap-2 px-3 sm:min-w-0 sm:flex-1"
+              >
+                <MapPin className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Restaurante</span>
+                <span className="sm:hidden">Local</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="employees"
+                className="flex shrink-0 grow-0 basis-auto items-center gap-2 px-3 sm:min-w-0 sm:flex-1"
+              >
+                <Users className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Empleados</span>
+                <span className="sm:hidden">Equipo</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="hours"
+                className="flex shrink-0 grow-0 basis-auto items-center gap-2 px-3 sm:min-w-0 sm:flex-1"
+              >
+                <Calendar className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Horas</span>
+                <span className="sm:hidden">Horas</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="shifts"
+                className="flex shrink-0 grow-0 basis-auto items-center gap-2 px-3 sm:min-w-0 sm:flex-1"
+              >
+                <Clock3 className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Turnos</span>
+                <span className="sm:hidden">Turnos</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="timeoff"
+                className="flex shrink-0 grow-0 basis-auto items-center gap-2 px-3 sm:min-w-0 sm:flex-1"
+              >
+                <Palmtree className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Vacaciones</span>
+                <span className="sm:hidden">Libres</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="incidents"
+                className="flex shrink-0 grow-0 basis-auto items-center gap-2 px-3 sm:min-w-0 sm:flex-1"
+              >
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Incidencias</span>
+                <span className="sm:hidden">Avisos</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Restaurant Tab */}
           <TabsContent value="restaurant" className="space-y-6">

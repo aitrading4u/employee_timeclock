@@ -66,6 +66,11 @@ function listDatesInclusive(start: string, end: string): string[] {
   return out;
 }
 
+/** Fecha calendario `YYYY-MM-DD` en una zona horaria (p. ej. Europa/Madrid para el negocio). */
+function todayYmdInTimeZone(timeZone: string): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone });
+}
+
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') {
     throw new Error('Unauthorized: Admin access required');
@@ -1009,20 +1014,70 @@ export const appRouter = router({
         if (input.endDate < input.startDate) {
           throw new Error("La fecha fin debe ser igual o posterior a la de inicio");
         }
-        const todayStr = format(new Date(), "yyyy-MM-dd");
+        const todayStr = todayYmdInTimeZone("Europe/Madrid");
         if (input.startDate < todayStr) {
           throw new Error("La solicitud debe ser para hoy o fechas futuras");
         }
         const db = await getDb();
         if (!db) throw new Error("Database not available");
-        await db.insert(timeOffRequests).values({
-          employeeId: input.employeeId,
-          kind: input.kind,
-          startDate: input.startDate,
-          endDate: input.endDate,
-          comment: input.comment.trim(),
-          status: "pending",
-        });
+        try {
+          await db.insert(timeOffRequests).values({
+            employeeId: input.employeeId,
+            kind: input.kind,
+            startDate: input.startDate,
+            endDate: input.endDate,
+            comment: input.comment.trim(),
+            status: "pending",
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (
+            msg.includes("time_off_requests") ||
+            msg.includes("does not exist") ||
+            msg.includes("relation") ||
+            msg.includes("42P01")
+          ) {
+            throw new Error(
+              "La base de datos no tiene aún la tabla de solicitudes. Aplica la migración 0004_time_off_requests en el servidor (PostgreSQL)."
+            );
+          }
+          throw err;
+        }
+        return { success: true };
+      }),
+
+    deleteMyTimeOffRequest: publicProcedure
+      .input(
+        z.object({
+          username: z.string().min(1),
+          password: z.string().min(1),
+          employeeId: z.number(),
+          requestId: z.number(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const employee = await getEmployeeByUsername(input.username);
+        if (!employee || employee.id !== input.employeeId) {
+          throw new Error("Empleado no encontrado");
+        }
+        const hashed = Buffer.from(input.password).toString("base64");
+        if (employee.password !== hashed) {
+          throw new Error("Credenciales inválidas");
+        }
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const [row] = await db
+          .select()
+          .from(timeOffRequests)
+          .where(eq(timeOffRequests.id, input.requestId))
+          .limit(1);
+        if (!row || row.employeeId !== input.employeeId) {
+          throw new Error("Solicitud no encontrada");
+        }
+        if (row.status !== "pending") {
+          throw new Error("Solo se pueden borrar solicitudes pendientes de revisión");
+        }
+        await db.delete(timeOffRequests).where(eq(timeOffRequests.id, input.requestId));
         return { success: true };
       }),
 
